@@ -27,7 +27,7 @@
 <br>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="A video feed where every GTA 6 video blurs in place with a Spoilers label, and one asks before it shows its title" width="100%">
+  <img src="docs/demo.gif" alt="No Wanted at work: GTA 6 videos blur in place and ask before they show, a page about the game gets covered, and an account is blocked from the menu" width="100%">
 </p>
 
 ## What it does
