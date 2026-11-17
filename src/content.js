@@ -760,7 +760,7 @@
     if (!S.hidePages) return false;
     if (hit(G.urlText(location.href))) return true;
     const title = realTitle ?? document.title;
-    if (hit(title)) return true;
+    if (hit(title) && titleIsTheTopic()) return true;
     if (adapter?.signals) {
       for (const el of document.querySelectorAll(adapter.signals)) {
         if (isVisible(el) && hit(el.textContent)) return true;
@@ -769,6 +769,15 @@
     const h1s = document.getElementsByTagName('h1');
     if (h1s.length === 1 && isVisible(h1s[0]) && hit(h1s[0].textContent)) return true;
     return false;
+  }
+
+  // A title names the page's subject only on articles and videos. A repository,
+  // profile, shop or site home that mentions the game in its title is not a
+  // page about it, so its mentions are blurred where they are and the page
+  // stays open. Pages that say nothing about their type keep the old rule.
+  function titleIsTheTopic() {
+    const type = document.querySelector('meta[property="og:type"]')?.content?.trim().toLowerCase();
+    return !type || type === 'article' || type.startsWith('video');
   }
 
   function isVisible(el) {

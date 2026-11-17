@@ -38,6 +38,9 @@ const APPS = [
 ];
 const SOCIAL_HOSTS = APPS.flatMap((a) => a.hosts);
 const WEB = { id: 'web', name: 'Websites', prefix: '' };
+// The allow list: sites No Wanted leaves alone. The same list as Settings.
+const ALLOW = { id: 'allow', name: 'Allowed', prefix: '' };
+const PLAIN = ['web', 'allow'];
 
 let S;
 let site = null;
@@ -51,6 +54,16 @@ const NAME = /^[a-z0-9_.\-]{1,60}$/i;
 function entryFor(app, text) {
   const t = text.trim();
   if (!t) return null;
+  if (app.id === 'allow') {
+    let host;
+    try {
+      host = new URL(t.includes('://') ? t : `https://${t}`).hostname;
+    } catch {
+      return null;
+    }
+    host = G.siteOf(host);
+    return host && host.includes('.') ? host : null;
+  }
   if (app.id === 'web') {
     const p = G.parseSource(t);
     return p && p.kind === 'site' ? p.value : null;
@@ -86,6 +99,7 @@ function entryFor(app, text) {
 
 // Which saved entries belong to an app, and how to show them.
 function entriesOf(app) {
+  if (app.id === 'allow') return S.offSites.map((host) => ({ value: host, shown: host }));
   const out = [];
   for (const value of S.sources) {
     const p = G.parseSource(value);
@@ -117,7 +131,7 @@ const same = (a, b) => G.parseSource(a)?.value.toLowerCase() === G.parseSource(b
 // ---- drawing ----
 
 function glyph(app) {
-  if (app.id === 'web') return document.querySelector('[data-app="web"] svg').cloneNode(true);
+  if (PLAIN.includes(app.id)) return document.querySelector(`[data-app="${app.id}"] svg`).cloneNode(true);
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
@@ -149,12 +163,12 @@ function drawApps() {
       else grid.append(b);
     }
   }
-  for (const app of [...APPS, WEB]) {
+  for (const app of [...APPS, WEB, ALLOW]) {
     const n = entriesOf(app).length;
     const badge = document.querySelector(`[data-app="${app.id}"] .badge`);
     badge.hidden = n === 0;
     badge.textContent = n > 99 ? '99+' : String(n);
-    document.querySelector(`[data-app="${app.id}"]`).setAttribute('aria-label', n ? `${app.name}, ${n} blocked` : app.name);
+    document.querySelector(`[data-app="${app.id}"]`).setAttribute('aria-label', n ? `${app.name}, ${n} ${app.id === 'allow' ? 'allowed' : 'blocked'}` : app.name);
   }
 }
 
@@ -176,14 +190,18 @@ function drawSheet() {
   const app = open;
   $('sheet-name').textContent = app.name;
   const tile = $('sheet-tile');
-  tile.className = app.id === 'web' ? 'tile plain' : 'tile';
+  tile.className = PLAIN.includes(app.id) ? 'tile plain' : 'tile';
   tile.style.background = app.color || '';
   tile.replaceChildren(glyph(app));
   $('prefix').textContent = app.prefix;
-  $('handle-label').textContent = app.id === 'web' ? 'Block a website or page' : 'Block an account';
-  $('handle').placeholder = app.id === 'web' ? 'example.com/page' : app.id === 'reddit' ? 'r/subreddit or u/name' : 'name or a link';
+  const allow = app.id === 'allow';
+  $('handle-label').textContent = allow ? 'Allow a website' : app.id === 'web' ? 'Block a website or page' : 'Block an account';
+  $('handle').placeholder = allow ? 'example.com' : app.id === 'web' ? 'example.com/page' : app.id === 'reddit' ? 'r/subreddit or u/name' : 'name or a link';
+  document.querySelector('#add button[type="submit"]').textContent = allow ? 'Allow' : 'Block';
   if (!$('note').classList.contains('error')) {
-    $('note').textContent = app.id === 'web'
+    $('note').textContent = allow
+      ? 'Nothing is blurred or covered there. Settings shows the same list'
+      : app.id === 'web'
       ? 'Visiting it covers the whole page, and links to it are hidden'
       : 'Everything they post is hidden, and their page is covered';
   }
@@ -196,13 +214,15 @@ function drawSheet() {
     who.textContent = e.shown;
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = 'Unblock';
-    b.setAttribute('aria-label', `Unblock ${e.shown}`);
-    b.addEventListener('click', () => set({ sources: S.sources.filter((v) => v !== e.value) }));
+    b.textContent = allow ? 'Remove' : 'Unblock';
+    b.setAttribute('aria-label', `${allow ? 'Remove' : 'Unblock'} ${e.shown}`);
+    b.addEventListener('click', () => set(allow
+      ? { offSites: S.offSites.filter((h) => h !== e.value) }
+      : { sources: S.sources.filter((v) => v !== e.value) }));
     li.append(who, b);
     list.append(li);
   }
-  $('empty').textContent = list.childElementCount ? '' : app.id === 'web' ? 'No websites blocked yet' : `No ${app.name} accounts blocked yet`;
+  $('empty').textContent = list.childElementCount ? '' : allow ? 'No websites allowed yet' : app.id === 'web' ? 'No websites blocked yet' : `No ${app.name} accounts blocked yet`;
 }
 
 function draw() {
@@ -262,7 +282,7 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-app]');
   if (!b || open) return;
   const id = b.dataset.app;
-  openApp(id === 'stats' ? 'stats' : id === 'web' ? WEB : APPS.find((a) => a.id === id));
+  openApp(id === 'stats' ? 'stats' : id === 'web' ? WEB : id === 'allow' ? ALLOW : APPS.find((a) => a.id === id));
 });
 $('back').addEventListener('click', closeApp);
 document.querySelector('[data-back]').addEventListener('click', closeApp);
@@ -305,13 +325,16 @@ $('add').addEventListener('submit', (e) => {
   if (!value) {
     note.classList.add('error');
     document.querySelector('.entry').classList.add('bad');
-    note.textContent = open.id === 'web' ? 'That doesn’t look like a website' : `That doesn’t look like ${/^[aeiox]/i.test(open.name) ? 'an' : 'a'} ${open.name} name or link`;
+    note.textContent = PLAIN.includes(open.id) ? 'That doesn’t look like a website' : `That doesn’t look like ${/^[aeiox]/i.test(open.name) ? 'an' : 'a'} ${open.name} name or link`;
     return;
   }
   note.classList.remove('error');
   document.querySelector('.entry').classList.remove('bad');
   $('handle').value = '';
-  if (!S.sources.some((v) => same(v, value))) set({ sources: [...S.sources, value] });
+  if (open.id === 'allow') {
+    if (!S.offSites.includes(value)) set({ offSites: [...S.offSites, value] });
+    else drawSheet();
+  } else if (!S.sources.some((v) => same(v, value))) set({ sources: [...S.sources, value] });
   else drawSheet();
 });
 $('handle').addEventListener('input', () => {
@@ -359,4 +382,4 @@ setInterval(async () => {
 }, 1000);
 
 // Exposed for the tests.
-globalThis.__nowanted = { openApp: (id) => openApp(id), entryFor: (id, text) => entryFor(id === 'web' ? WEB : APPS.find((a) => a.id === id), text) };
+globalThis.__nowanted = { openApp: (id) => openApp(id), entryFor: (id, text) => entryFor(id === 'web' ? WEB : id === 'allow' ? ALLOW : APPS.find((a) => a.id === id), text) };
