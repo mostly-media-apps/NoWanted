@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="No Wanted: blurs GTA 6 videos, posts, comments and articles on every site, until you choose to look" width="100%">
+  <img src="docs/hero.jpg" alt="Spoilers: No Wanted. Play it before you see it, over a sunset on the Vice City coast" width="100%">
 </p>
 
 <p align="center">
