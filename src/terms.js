@@ -8,8 +8,11 @@
   const W = String.raw`[\s\-_]+`; // between words of a name (also matches URL slugs)
   const START = String.raw`(?<![a-z0-9])`;
   // A 6 that starts a number or a measure is Toronto news, not the game:
-  // "GTA 6.5%", "GTA 6-bedroom", "GTA 6 people", "the 6ix".
-  const NOT_A_COUNT = String.raw`(?![0-9]|[.,][0-9]|ix|\s*%|-?(?:bedroom|storey|story|lane|unit|plex)|\s+(?:people|persons|residents|per\s?cent|percent|cm|mm|km|degrees|°|condos|schools|hospitals|municipalities|deaths|injured|arrested|charged))`;
+  // "GTA 6.5%", "GTA 6-bedroom", "GTA 6 residents", "the 6ix". Words a video
+  // about the game also uses ("GTA 6 deaths", "GTA 6 people", "GTA 6-story")
+  // are not on the list: a blurred Toronto headline costs a click, a spoiler
+  // that got through can't be unseen.
+  const NOT_A_COUNT = String.raw`(?![0-9]|[.,][0-9]|ix|\s*%|-?(?:bedroom|storey|lane|unit|plex)|\s+(?:persons|residents|per\s?cent|percent|cm|mm|km|degrees|°|condos|schools|hospitals|municipalities|injured|arrested|charged))`;
   const SIX = String.raw`(?:6${NOT_A_COUNT}|vi(?![a-z])|six(?![a-z])|sixth(?![a-z]))`;
 
   // Level 1: the game's title, however it is written.
@@ -20,16 +23,23 @@
     `${START}g\\.\\s?t\\.\\s?a\\.\\s*${SIX}`,
     // hashtags that glue a word onto "gtavi"
     `${START}gtavi(?=trailer|leak|news|gameplay|online|map|hype|countdown|meme|clip|short|edit|release|launch|day|review|mission|ending|story)`,
+    // "GTA: VI". A Roman numeral is never a Toronto head count, so the colon
+    // may be followed by a space here ("the GTA: 6 new condos" may not).
+    `${START}gta:\\s*vi(?![a-z])`,
     // GTA 5 vs 6, GTA V to VI
     `${START}gta${SEP}(?:5|v)\\s*(?:vs\\.?|versus|and|&|or|to|\\/|->|→)\\s*(?:6|vi)(?![a-z0-9])`,
-    `${START}grand${W}theft${W}auto${SEP}${SIX}`,
+    // The full name is never Toronto, so "Grand Theft Auto: 6" counts too.
+    `${START}grand${W}theft${W}auto(?:[\\s\\-_]*|[.:]\\s*)${SIX}`,
     // Russian, Chinese, Japanese, Korean, Arabic
-    `(?:гта|джи\\s*ти\\s*эй)\\s*(?:6|vi|шесть)`,
-    `(?:侠盗猎车手|俠盜獵車手|侠盗猎车|给他爱)\\s*(?:6|vi|六)`,
+    `(?:[гґ]та|джи\\s*ти\\s*эй)[\\s\\-]*(?:6|vi|шесть)`,
+    `(?:侠盗猎车手|俠盜獵車手|侠盗猎车|横行霸道|橫行霸道|给他爱)\\s*(?:6|vi|六)`,
     `gta\\s*六`,
     `(?:グラセフ|グランド[・\\s]?セフト[・\\s]?オート)\\s*(?:6|vi)`,
-    `지티에이\\s*(?:6|vi)`,
-    `(?:جي\\s*تي\\s*(?:اي|إيه)|قراند)\\s*(?:6|٦)`,
+    `(?:지티에이|그타)\\s*(?:6|vi)`,
+    // Arabic and Persian: either "ya", any hamza on the alef, a trailing "h",
+    // and Persian digits. "Grand" by itself counts only in the Gulf spelling,
+    // which is what the game is called there; the others need the full name.
+    `(?:ج[يی]\\s*ت[يی]\\s*[اأإآ][يی]ه?|قراند|[قجغ]راند\\s*ث[يی]?فت\\s*[اأ]وتو)\\s*(?:6|٦|۶)`,
   ];
 
   // Level 2: people and places that only exist in this game.

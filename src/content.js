@@ -1155,7 +1155,10 @@
     R = readRules();
     adapter = G.adapterFor(location.hostname, R?.sites);
     build();
-    active = S.enabled && !S.offSites.includes(site) && !R?.off.includes(site) && !OWN_SITES.includes(site);
+    // An allowed site covers its subdomains too: allowing github.com also
+    // leaves gist.github.com and docs.github.com alone.
+    const listed = (list) => !!list?.some((h) => site === h || site.endsWith('.' + h));
+    active = S.enabled && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
     look();
     root.toggleAttribute('data-gsb-locked', S.reveal === 'locked');
     veil?.sync();

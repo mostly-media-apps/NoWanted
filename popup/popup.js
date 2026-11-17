@@ -25,16 +25,21 @@ window.addEventListener('resize', fitWindow);
 // One app per platform. `profile` turns what someone types (a name, @name,
 // or a pasted link) into the path of that account's page, which is what the
 // always-blur list stores: "x.com/name", "youtube.com/@name" and so on.
+// A pasted link must point at an account, not a post or a section of the
+// site: `at` means account paths start with @ (or one of `dirs`), `only`
+// means they always start with one of `dirs`, and `notAccounts` lists first
+// path segments that are never an account. Without this, a pasted video link
+// would block all of youtube.com/watch.
 const APPS = [
-  { id: 'x', name: 'X', color: '#000000', hosts: ['x.com', 'twitter.com'], prefix: '@', profile: (n) => `/${n}` },
-  { id: 'youtube', name: 'YouTube', color: '#ff0033', hosts: ['youtube.com'], prefix: '@', profile: (n) => `/@${n}`, dirs: ['channel', 'c', 'user'] },
-  { id: 'instagram', name: 'Instagram', color: '#e1306c', hosts: ['instagram.com'], prefix: '@', profile: (n) => `/${n}` },
-  { id: 'tiktok', name: 'TikTok', color: '#000000', hosts: ['tiktok.com'], prefix: '@', profile: (n) => `/@${n}` },
-  { id: 'reddit', name: 'Reddit', color: '#ff4500', hosts: ['reddit.com'], prefix: '', profile: (n) => `/user/${n}`, dirs: ['user', 'u', 'r'] },
-  { id: 'twitch', name: 'Twitch', color: '#9146ff', hosts: ['twitch.tv'], prefix: '', profile: (n) => `/${n}` },
-  { id: 'facebook', name: 'Facebook', color: '#0866ff', hosts: ['facebook.com'], prefix: '', profile: (n) => `/${n}` },
-  { id: 'threads', name: 'Threads', color: '#000000', hosts: ['threads.com', 'threads.net'], prefix: '@', profile: (n) => `/@${n}`, dock: true },
-  { id: 'bluesky', name: 'Bluesky', color: '#1185fe', hosts: ['bsky.app'], prefix: '@', profile: (n) => `/profile/${n.includes('.') ? n : n + '.bsky.social'}`, dirs: ['profile'] },
+  { id: 'x', name: 'X', color: '#000000', hosts: ['x.com', 'twitter.com'], prefix: '@', profile: (n) => `/${n}`, notAccounts: ['home', 'i', 'search', 'explore', 'notifications', 'messages', 'settings', 'compose', 'hashtag', 'intent', 'share'] },
+  { id: 'youtube', name: 'YouTube', color: '#ff0033', hosts: ['youtube.com'], prefix: '@', profile: (n) => `/@${n}`, dirs: ['channel', 'c', 'user'], at: true },
+  { id: 'instagram', name: 'Instagram', color: '#e1306c', hosts: ['instagram.com'], prefix: '@', profile: (n) => `/${n}`, notAccounts: ['p', 'reel', 'reels', 'tv', 'explore', 'stories', 'accounts', 'direct'] },
+  { id: 'tiktok', name: 'TikTok', color: '#000000', hosts: ['tiktok.com'], prefix: '@', profile: (n) => `/@${n}`, at: true },
+  { id: 'reddit', name: 'Reddit', color: '#ff4500', hosts: ['reddit.com'], prefix: '', profile: (n) => `/user/${n}`, dirs: ['user', 'u', 'r'], only: true },
+  { id: 'twitch', name: 'Twitch', color: '#9146ff', hosts: ['twitch.tv'], prefix: '', profile: (n) => `/${n}`, notAccounts: ['videos', 'directory', 'search', 'settings', 'downloads', 'p', 'subscriptions', 'inventory', 'wallet', 'drops'] },
+  { id: 'facebook', name: 'Facebook', color: '#0866ff', hosts: ['facebook.com'], prefix: '', profile: (n) => `/${n}`, notAccounts: ['profile.php', 'people', 'pages', 'pg', 'watch', 'reel', 'reels', 'videos', 'photo', 'photo.php', 'story.php', 'stories', 'permalink.php', 'share', 'groups', 'events', 'marketplace', 'gaming', 'hashtag', 'search', 'home.php', 'login'] },
+  { id: 'threads', name: 'Threads', color: '#000000', hosts: ['threads.com', 'threads.net'], prefix: '@', profile: (n) => `/@${n}`, at: true, dock: true },
+  { id: 'bluesky', name: 'Bluesky', color: '#1185fe', hosts: ['bsky.app'], prefix: '@', profile: (n) => `/profile/${n.includes('.') ? n : n + '.bsky.social'}`, dirs: ['profile'], only: true },
 ];
 const SOCIAL_HOSTS = APPS.flatMap((a) => a.hosts);
 const WEB = { id: 'web', name: 'Websites', prefix: '' };
@@ -50,9 +55,12 @@ let open = null; // the app on screen, or null for the home screen
 // ---- reading what was typed ----
 
 const NAME = /^[a-z0-9_.\-]{1,60}$/i;
+// Set when the last link was on the right site but not an account's page.
+let notAccount = false;
 
 function entryFor(app, text) {
   const t = text.trim();
+  notAccount = false;
   if (!t) return null;
   if (app.id === 'allow') {
     let host;
@@ -86,7 +94,13 @@ function entryFor(app, text) {
     if (!app.hosts.some((h) => host === h || host.endsWith('.' + h))) return null;
     const segs = u.pathname.split('/').filter(Boolean);
     if (!segs.length) return null;
-    const take = app.dirs?.includes(segs[0].toLowerCase()) ? 2 : 1;
+    const first = segs[0].toLowerCase();
+    const inDir = app.dirs?.includes(first);
+    if ((app.only && !inDir) || (app.at && !inDir && !first.startsWith('@')) || app.notAccounts?.includes(first)) {
+      notAccount = true;
+      return null;
+    }
+    const take = inDir ? 2 : 1;
     if (segs.length < take) return null;
     if (app.id === 'reddit' && segs[0].toLowerCase() === 'r') return `r/${segs[1]}`;
     return `${app.hosts[0]}/${segs.slice(0, take).join('/')}`.toLowerCase();
@@ -175,7 +189,7 @@ function drawApps() {
 function drawHome() {
   document.body.classList.toggle('is-off', !S.enabled);
   $('enabled').checked = S.enabled;
-  const offHere = site && S.offSites.includes(site);
+  const offHere = site && S.offSites.some((h) => site === h || site.endsWith('.' + h));
   let line;
   if (!S.enabled) line = 'Off. Nothing is being hidden';
   else if (offHere) line = `Off on ${site}`;
@@ -325,7 +339,9 @@ $('add').addEventListener('submit', (e) => {
   if (!value) {
     note.classList.add('error');
     document.querySelector('.entry').classList.add('bad');
-    note.textContent = PLAIN.includes(open.id) ? 'That doesn’t look like a website' : `That doesn’t look like ${/^[aeiox]/i.test(open.name) ? 'an' : 'a'} ${open.name} name or link`;
+    note.textContent = PLAIN.includes(open.id) ? 'That doesn’t look like a website'
+      : notAccount ? 'Paste the account’s page, not a post'
+      : `That doesn’t look like ${/^[aeiox]/i.test(open.name) ? 'an' : 'a'} ${open.name} name or link`;
     return;
   }
   note.classList.remove('error');

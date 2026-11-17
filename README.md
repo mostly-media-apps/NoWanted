@@ -12,7 +12,7 @@
   <a href="#firefox"><img alt="Firefox: in review" src="https://img.shields.io/badge/Firefox-in%20review-2b2236?style=flat-square&logo=firefoxbrowser&logoColor=ededed&labelColor=100d15"></a>
   <a href="#safari"><img alt="Safari: coming soon" src="https://img.shields.io/badge/Safari-coming%20soon-2b2236?style=flat-square&logo=safari&logoColor=ededed&labelColor=100d15"></a>
   <a href="#privacy"><img alt="Data collected: none" src="https://img.shields.io/badge/data%20collected-none-ff5aa8?style=flat-square&labelColor=100d15"></a>
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-2b2236?style=flat-square&labelColor=100d15">
+  <img alt="Version 1.0.1" src="https://img.shields.io/badge/version-1.0.1-2b2236?style=flat-square&labelColor=100d15">
   <a href="https://ko-fi.com/mostlymedia"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support-2b2236?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15"></a>
 </p>
 
@@ -46,8 +46,8 @@ Videos, Shorts, Reels, TikToks, posts, comments, search results, headlines and a
 </table>
 
 - **It pauses and mutes** a blurred video, so a Short can't spoil it out loud
-- **It catches every spelling:** GTA 6, GTA VI, GTA6, Grand Theft Auto VI, hashtags, and Russian, Chinese, Japanese, Korean and Arabic
-- **You pick how much counts:** the title only, names and places too (the cast, Leonida, Vice City), or the whole series
+- **It catches the common spellings:** GTA 6, GTA VI, GTA6, Grand Theft Auto VI, hashtags, and the title in Russian, Chinese, Japanese, Korean and Arabic
+- **You pick how much counts:** the title only, names and places too (the cast by full name, “Jason and Lucia”, Leonida, Vice City), or the whole series
 - **Allow any website** from the menu, and No Wanted leaves it alone
 - **It knows the big sites:** YouTube, X, Reddit, TikTok, Instagram, Facebook, Twitch, Bluesky, Google, Bing and DuckDuckGo. Everywhere else it finds the card or paragraph around the mention
 
@@ -66,7 +66,7 @@ Videos, Shorts, Reels, TikToks, posts, comments, search results, headlines and a
 
 ### Chrome, Edge, Brave, Arc
 
-1. Download **`nowanted-chrome-1.0.0.zip`** from the [Releases](../../releases) page and unzip it
+1. Download **`nowanted-chrome-1.0.1.zip`** from the [Releases](../../releases) page and unzip it
 2. Open <kbd>chrome://extensions</kbd> and turn on **Developer mode** (top right)
 3. Click **Load unpacked** and pick the unzipped folder
 4. Pin No Wanted from the puzzle-piece menu so its button stays in the toolbar
@@ -76,7 +76,7 @@ Videos, Shorts, Reels, TikToks, posts, comments, search results, headlines and a
 
 No Wanted is in review on Firefox Add-ons, and this section will link to it once it's live. To try it before then:
 
-1. Download **`nowanted-firefox-1.0.0.zip`** from [Releases](../../releases)
+1. Download **`nowanted-firefox-1.0.1.zip`** from [Releases](../../releases)
 2. Open <kbd>about:debugging#/runtime/this-firefox</kbd>
 3. Click **Load Temporary Add-on** and pick the zip
 
@@ -91,7 +91,7 @@ Coming soon for Mac, iPhone and iPad.
 No Wanted works inside your browser. It has no account, no analytics and no ads, and it collects nothing.
 
 - The text of the pages you open is checked on your computer and never leaves it
-- Once a day it downloads one small rules file from nowanted.online with new words and site fixes. It's data only, nothing in it runs as code, and the request carries nothing about you. You can switch it off in Settings
+- Once a day it downloads one small rules file from nowanted.online with new words and accounts to catch, sites to leave alone and fixes for sites that changed. It's data only, nothing in it runs as code, and the request carries nothing about you. You can switch it off in Settings
 - Your stats stay on your computer. Removing the extension removes everything it saved
 
 The full policy is at [nowanted.online/privacy](https://nowanted.online/privacy.html).
