@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<title>No Wanted</title>
+<link rel="stylesheet" href="../ui/ui.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="phone">
+  <div class="screen">
+    <!-- Wallpaper, the one picture in the interface: sunset while on, night when off. -->
+    <div class="wallpaper" aria-hidden="true"><img src="../art/scene.svg" alt=""><img class="night" src="../art/scene-night.svg" alt=""></div>
+
+    <div class="status mono" aria-hidden="true">
+      <span id="clock"></span>
+      <span class="bars"><i></i><i></i><i></i><i></i></span>
+    </div>
+
+    <header class="home-head">
+      <div class="title-row">
+        <h1 class="name display" aria-label="No Wanted">No<i class="hair"></i>wanted</h1>
+        <p class="sub">for <span class="redact">GTA 6</span></p>
+      </div>
+      <label class="switch" title="Turn No Wanted on or off"><input type="checkbox" id="enabled" aria-label="No Wanted on"><span class="track"><span class="knob"></span></span></label>
+    </header>
+    <div class="tally">
+      <span class="big display" id="total">0</span>
+      <span class="tally-words"><span>spoilers blocked</span><span class="mono" id="count" role="status"></span></span>
+    </div>
+
+    <nav class="apps" id="apps" aria-label="Block an account"></nav>
+
+    <div class="dock">
+      <button type="button" class="app" data-app="web">
+        <span class="tile plain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"/></svg><span class="badge mono" hidden></span></span>
+        <span class="label">Websites</span>
+      </button>
+      <button type="button" class="app" data-app="stats">
+        <span class="tile plain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V12M10 20V6M15 20v-9M20 20V3"/></svg></span>
+        <span class="label">Stats</span>
+      </button>
+      <button type="button" class="app" id="settings">
+        <span class="tile plain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span>
+        <span class="label">Settings</span>
+      </button>
+    </div>
+
+    <!-- One app, opened over the home screen -->
+    <section class="sheet" id="sheet" aria-labelledby="sheet-name" hidden>
+      <div class="sheet-body">
+      <button type="button" class="back" id="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Home</button>
+      <div class="sheet-head">
+        <span class="tile" id="sheet-tile"></span>
+        <h2 id="sheet-name"></h2>
+      </div>
+      <form id="add" class="add">
+        <label for="handle" id="handle-label">Block an account</label>
+        <div class="entry">
+          <span class="prefix mono" id="prefix">@</span>
+          <input type="text" id="handle" autocomplete="off" spellcheck="false">
+          <button type="submit">Block</button>
+        </div>
+        <p class="note" id="note"></p>
+      </form>
+      <ul class="blocked" id="blocked"></ul>
+      <p class="empty" id="empty"></p>
+      </div>
+    </section>
+    <section class="sheet stats" id="stats" aria-labelledby="stats-title" hidden>
+      <div class="sheet-body">
+      <button type="button" class="back" data-back><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>Home</button>
+      <div class="stats-head">
+        <h2 id="stats-title" class="visually-hidden">Stats</h2>
+        <span class="big display" id="s-total">0</span>
+        <span class="stats-note" id="s-since"></span>
+      </div>
+      <dl class="trio">
+        <div><dt>Today</dt><dd class="display" id="s-today">0</dd></div>
+        <div><dt>This week</dt><dd class="display" id="s-week">0</dd></div>
+        <div><dt>This page</dt><dd class="display" id="s-page">0</dd></div>
+      </dl>
+      <div class="week" id="s-days" aria-label="The last seven days"></div>
+      <div class="split">
+        <section><h3>What it caught</h3><ul class="bars-list" id="s-kinds"></ul></section>
+        <section><h3>Where</h3><ul class="bars-list" id="s-sites"></ul></section>
+      </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="../src/terms.js"></script>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

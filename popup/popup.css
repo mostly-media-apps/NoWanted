@@ -1,0 +1,159 @@
+/* The toolbar menu is a phone: a home screen with one app per platform.
+   The wallpaper is the one picture: the city at sunset while No Wanted is on, the
+   same city at night when it is switched off. The rest is ink.
+   The popup window itself is the phone's body, so there is one edge, not two. */
+:root { color-scheme: dark; --text: #ededed; --text-2: #a1a1a6; --text-3: #85858b; }
+html, body { width: 360px; height: 600px; overflow: hidden; }
+body { background: #05040c; color: #ededed; }
+/* Safari on iPhone opens the menu in a sheet wider than the phone: keep it centred. */
+html { background: #05040c; }
+body { margin-inline: auto; }
+@media (min-width: 380px) { html { width: auto; } }
+
+.phone { height: 100%; padding: 6px; background: #05040c; }
+.screen { position: relative; height: 100%; overflow: hidden; border-radius: 28px; background: #0e0619; isolation: isolate; }
+
+.wallpaper { position: absolute; top: 0; left: 0; width: 100%; height: 304px; z-index: -1; }
+.wallpaper { overflow: hidden; }
+.wallpaper img { position: absolute; top: 0; left: -200px; display: block; width: 640px; height: 360px; }
+/* Off: night falls. The night picture fades in over the sunset. */
+.wallpaper .night { opacity: 0; transition: opacity var(--slow) var(--ease); }
+.is-off .wallpaper .night { opacity: 1; }
+/* The sea runs into the screen behind the apps. */
+.wallpaper::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: linear-gradient(rgba(14, 6, 25, 0), #0e0619); }
+
+/* ---- status bar ---- */
+.status { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 8px 28px 0; font-size: 12px; line-height: 16px; color: #ededed; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 10px; }
+.bars i { width: 3px; border-radius: 1px; background: #ededed; }
+.bars i:nth-child(1) { height: 4px; }
+.bars i:nth-child(2) { height: 6px; }
+.bars i:nth-child(3) { height: 8px; }
+.bars i:nth-child(4) { height: 10px; }
+
+/* ---- name and count, on the sky ---- */
+.home-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 0; }
+.title-row { display: flex; align-items: baseline; gap: 8px; }
+.name { font-size: 40px; line-height: 40px; color: #ffffff; }
+.sub { font-size: 14px; line-height: 20px; color: rgba(255, 255, 255, 0.7); white-space: nowrap; }
+.sub .redact { color: rgba(255, 255, 255, 0.7); }
+.sub .redact::after { background: #0c0714; }
+.home-head .switch .track { background: rgba(12, 7, 20, 0.6); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.home-head .switch input:checked + .track { background: #ededed; box-shadow: none; }
+.home-head .switch input:checked + .track .knob { background: #171717; }
+/* The tally: how much it has caught, on the sky under the name. */
+/* The figure is as tall as its two lines of words. */
+.tally { display: flex; align-items: center; gap: 12px; padding: 12px 24px 0; }
+.tally .big { font-size: 32px; line-height: 32px; color: #ffffff; }
+.tally-words { display: grid; font-size: 13px; line-height: 16px; color: rgba(255, 255, 255, 0.9); }
+.tally-words .mono { font-size: 11px; line-height: 16px; color: rgba(255, 255, 255, 0.7); }
+
+/* ---- the apps ---- */
+.apps { position: absolute; top: 312px; left: 12px; right: 12px; display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 16px; }
+.app {
+  display: grid; justify-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  border-radius: 16px;
+}
+.tile {
+  position: relative; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.app:hover .tile { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32); }
+.tile svg { width: 26px; height: 26px; fill: currentColor; }
+.tile.plain { background: #261c33; }
+.tile.plain svg { fill: none; }
+.app:active .tile { transform: scale(0.94); }
+.app:focus-visible { outline: none; }
+.app:focus-visible .tile { outline: 2px solid #ededed; outline-offset: 2px; }
+.label { max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 16px; color: #ededed; }
+.badge {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--accent); color: #171717; font-size: 11px; line-height: 20px; font-weight: 500; text-align: center;
+  box-shadow: 0 0 0 2px #0e0619;
+}
+.badge[hidden] { display: none; }
+
+.dock {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; height: 88px;
+  display: flex; align-items: center; justify-content: space-evenly; padding: 0 4px;
+  border-radius: 20px; background: rgba(237, 237, 237, 0.07);
+}
+.dock .badge { box-shadow: 0 0 0 2px #221a2b; }
+.dock .tile.plain { background: rgba(237, 237, 237, 0.08); box-shadow: none; }
+
+.is-off .apps, .is-off .dock .app[data-app] { opacity: 0.4; transition: opacity var(--moderate) var(--ease); }
+
+/* ---- an open app ---- */
+.sheet {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+  padding-top: 36px; background: #110a1b; overflow: hidden;
+  opacity: 0; transform: translateY(12px);
+  transition: opacity var(--moderate) var(--ease), transform var(--moderate) var(--ease);
+}
+.sheet.open { opacity: 1; transform: none; transition-duration: var(--slow); }
+.sheet[hidden] { display: none; }
+/* What scrolls starts under the status bar and fades in at its top edge. */
+.sheet-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 8px 20px 20px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: rgba(237, 237, 237, 0.16) transparent;
+  -webkit-mask-image: linear-gradient(transparent, #000 8px); mask-image: linear-gradient(transparent, #000 8px);
+}
+.sheet-body > * { flex-shrink: 0; }
+
+.back {
+  align-self: flex-start; display: flex; align-items: center; gap: 4px; height: 32px; margin-left: -8px; padding: 0 12px 0 4px;
+  border: 0; border-radius: 8px; background: none; color: var(--text-2); font: 400 14px/20px var(--sans); cursor: pointer;
+  transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.back svg { width: 20px; height: 20px; }
+.back:hover { color: #ededed; background: #221a2e; }
+
+.sheet-head { display: flex; align-items: center; gap: 12px; }
+.sheet-head .tile { width: 40px; height: 40px; border-radius: 10px; }
+.sheet-head .tile svg { width: 20px; height: 20px; }
+.sheet-head h2 { font-size: 20px; line-height: 28px; font-weight: 500; }
+
+.add { display: grid; gap: 8px; }
+.add label { font-size: 13px; line-height: 20px; color: var(--text-2); }
+.entry {
+  display: flex; align-items: center; height: 40px; padding: 0 4px 0 12px; border-radius: 10px; background: #221a2e;
+  box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.08);
+  transition: box-shadow var(--fast) var(--ease);
+}
+.entry:hover { box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.16); }
+.entry:focus-within { box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.4); }
+.entry.bad, .entry.bad:focus-within { box-shadow: inset 0 0 0 1px #ff8a8a; }
+.prefix { flex: none; color: var(--text-3); font-size: 14px; line-height: 20px; }
+.prefix:empty { display: none; }
+.entry input { flex: 1; min-width: 0; height: 100%; padding: 0 8px 0 2px; border: 0; background: none; color: #ededed; font: 400 14px/20px var(--sans); outline: none; }
+.entry input::placeholder { color: var(--text-3); }
+.entry button {
+  flex: none; height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #ededed; color: #171717;
+  font: 500 13px/20px var(--sans); cursor: pointer; transition: transform var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.entry button:hover { background: #ffffff; }
+.entry button:active { transform: scale(0.96); }
+.note { font-size: 12px; line-height: 16px; color: var(--text-3); }
+.note.error { color: #ff8a8a; }
+
+.blocked { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.blocked:empty { display: none; }
+.blocked li { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border-radius: 10px; background: #1a1226; box-shadow: inset 0 0 0 1px rgba(237, 237, 237, 0.06); }
+.blocked .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.blocked button {
+  flex: none; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--text-2);
+  font: 400 13px/20px var(--sans); cursor: pointer; transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.blocked button:hover { color: #ededed; background: #221a2e; }
+.empty { font-size: 13px; line-height: 20px; color: var(--text-3); }
+.empty:empty { display: none; }
+
+.stats .sheet-body { gap: 20px; }
+.stats-head { display: grid; gap: 4px; }
+.stats-head .big { font-size: 64px; line-height: 64px; color: #ffffff; }
+.stats-note { font-size: 13px; line-height: 20px; color: var(--text-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet { transform: none; }
+}

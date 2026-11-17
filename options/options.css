@@ -1,0 +1,172 @@
+/* Settings fills the window: the scene (sunset while on, night when off) with the
+   name and the switch down the left, and every setting on a board of cards beside it, so nothing needs a scroll
+   on a desktop screen. Inside a card nothing else is boxed: lists use hairlines,
+   figures stand alone, and the preview sits in a darker well. */
+body { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 100vh; }
+a { border-radius: 4px; }
+
+/* ---- the side: the scene, the name, the switch, the small print ---- */
+.side { position: sticky; top: 0; height: 100vh; overflow: hidden; background: #14082a; }
+.side img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 63% 50%; }
+/* Off: night falls. The night picture fades in over the sunset. */
+.side .night { opacity: 0; transition: opacity var(--slow) var(--ease); }
+.is-off .side .night { opacity: 1; }
+/* The small print sits on the dark shore, so the bottom of the picture is steadied. */
+.side::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 240px; background: linear-gradient(rgba(11, 5, 20, 0), rgba(11, 5, 20, 0.92) 62%); }
+.side-in { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 20px; height: 100%; padding: 32px; }
+.brand { display: grid; gap: 4px; }
+.side .name { font-size: 56px; line-height: 56px; color: #ffffff; }
+.side .sub { font-size: 16px; line-height: 24px; color: rgba(255, 255, 255, 0.8); }
+.side .redact { color: rgba(255, 255, 255, 0.8); }
+.side .redact::after { background: #0c0714; }
+.power { display: flex; align-items: center; gap: 12px; align-self: flex-start; cursor: pointer; font-size: 14px; line-height: 20px; color: #ffffff; }
+.power .switch input { cursor: pointer; }
+.side .switch .track { background: rgba(12, 7, 20, 0.6); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24); }
+.side .switch input:checked + .track { background: var(--on); box-shadow: none; }
+footer { display: grid; gap: 8px; margin-top: auto; font-size: 13px; line-height: 20px; color: var(--text-2); }
+footer p { color: var(--text-2); }
+footer .mono { font-size: 12px; color: var(--text-3); }
+.foot-end { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+footer a { color: var(--text); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; transition: text-decoration-color var(--fast) var(--ease); }
+footer a:hover { text-decoration-color: var(--text-2); }
+footer a[hidden] { display: none; }
+
+/* ---- the board ---- */
+main { min-width: 0; padding: 24px; }
+.board { columns: 4 320px; column-gap: 16px; max-width: 1720px; }
+.card {
+  break-inside: avoid; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin: 0 0 16px; padding: 20px;
+  border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line);
+  transition: opacity var(--moderate) var(--ease);
+}
+.is-off .card:not(.stats) { opacity: 0.4; }
+h2 { font-size: 15px; line-height: 24px; font-weight: 500; }
+.choice-note { display: block; font-size: 13px; line-height: 20px; color: var(--text-2); }
+
+/* ---- stats ---- */
+.stats-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.stats-grid { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.hero-n { display: grid; gap: 4px; }
+.hero-n .big { font-size: 64px; line-height: 64px; color: #ffffff; }
+.stats .trio { display: flex; gap: 24px; }
+.stats .trio div { padding: 0; border-radius: 0; background: none; box-shadow: none; }
+.stats .week { height: 80px; }
+.stats .split { grid-template-columns: 1fr 1fr; gap: 24px; }
+button.quiet { height: 32px; margin: -4px -12px 0 0; padding: 0 12px; background: none; box-shadow: none; font-weight: 400; font-size: 13px; color: var(--text-2); }
+button.quiet:hover { background: var(--raised); color: var(--text); box-shadow: none; }
+
+/* ---- the blur sample: a plain video and a hidden one, in a darker well ---- */
+.sample { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; border-radius: 12px; background: var(--bg); }
+.tile { min-width: 0; }
+.shot { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; background: #d9cdb8; margin-bottom: 8px; overflow: hidden; }
+.shot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shot.dusk { background: #2a1240 url("../art/scene.svg") 62% 70% / cover; }
+.shot span { position: absolute; right: 8px; bottom: 8px; padding: 0 4px; border-radius: 4px; background: rgba(15, 15, 16, 0.8); color: #ededed; font-size: 12px; line-height: 16px; }
+.tile-title { font-size: 13px; line-height: 20px; font-weight: 500; }
+.tile-meta { font-size: 12px; line-height: 16px; color: var(--text-2); }
+/* The hidden tile looks the way a hidden post does on a page: each piece blurred in
+   its own box, the channel left readable, one frame around it. */
+#sample { position: relative; isolation: isolate; margin: -8px; padding: 8px; }
+#sample .shot { filter: blur(var(--sample-blur, 20px)) grayscale(0.7); clip-path: inset(0 round 8px); }
+#sample .tile-title, #sample .when { filter: blur(max(6px, calc(var(--sample-blur, 20px) * 0.4))) grayscale(0.7); clip-path: inset(0 round 4px); }
+#sample .when { display: inline-block; }
+.frame { position: absolute; inset: 0; pointer-events: none; }
+/* A ring with round corners: the fill shows only in the 2px between the two masks. */
+.frame::before {
+  content: ""; position: absolute; inset: 0; padding: 2px; border-radius: 12px;
+  background: var(--sample-frame, linear-gradient(135deg, #ff4fa3, #ff8a3d 55%, #8b3fd9));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.frame-tag { position: absolute; top: 12px; right: 12px; height: 20px; padding: 0 8px; border-radius: 6px; background: rgba(22, 12, 28, 0.88); color: #ffffff; font-size: 11px; line-height: 20px; font-weight: 500; }
+.is-off #sample .shot, .is-off #sample .tile-title, .is-off #sample .when { filter: none; clip-path: none; }
+.is-off .frame { display: none; }
+
+/* ---- fields ---- */
+.pair { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; }
+.seg .chip { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 4px; }
+.chip.sunset { background: linear-gradient(135deg, #ff4fa3, #ff8a3d 55%, #8b3fd9); }
+.chip.pink { background: #ff4fa3; }
+.chip.white { background: #ededed; }
+.chip.gray { background: #85858b; }
+.seg label:has(.chip) { display: flex; align-items: center; justify-content: center; }
+.field { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 12px; }
+.field output { width: 44px; text-align: right; font-size: 13px; color: var(--text-2); }
+.stack { display: grid; gap: 8px; }
+
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 20px; margin: 0; background: none; cursor: pointer; }
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--thumb); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--thumb); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 8px; border: 0; background: var(--text); transition: transform var(--fast) var(--ease); }
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 8px; border: 0; background: var(--text); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(0.92); }
+
+textarea, input[type="text"] {
+  width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; background: var(--raised); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line); font: 400 14px/20px var(--sans); resize: vertical;
+  transition: box-shadow var(--fast) var(--ease);
+}
+textarea { min-height: 56px; }
+textarea::placeholder, input::placeholder { color: var(--text-3); }
+textarea:hover, input[type="text"]:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+textarea:focus-visible, input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+
+button {
+  height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: var(--raised); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line); font: 500 14px/20px var(--sans); cursor: pointer;
+  transition: background-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+button:hover { background: var(--thumb); }
+button:active { transform: scale(0.98); }
+
+/* ---- radio list with one highlight that glides between rows ---- */
+.choices { position: relative; display: grid; gap: 4px; margin: 0 -8px; }
+.glide {
+  position: absolute; left: 0; right: 0; top: 0; height: var(--h, 0); border-radius: 8px; background: var(--raised);
+  opacity: 0; transform: translateY(var(--y, 0));
+  transition: transform var(--moderate) var(--ease), opacity var(--fast) var(--ease);
+  pointer-events: none;
+}
+.choices.hovering .glide { opacity: 1; }
+.choice { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 12px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.choice input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.choice .dot { width: 16px; height: 16px; margin-top: 2px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--moderate) var(--ease), background-color var(--moderate) var(--ease); }
+.choice input:checked + .dot { background: var(--on-ink); box-shadow: inset 0 0 0 4px var(--on); }
+.choice-name { display: block; }
+.choice:has(input:checked) .choice-name { font-weight: 500; }
+.choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 0; }
+
+.toggle { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.toggle .switch { margin-top: 2px; }
+
+/* ---- lists of sites, handles and subreddits: rows with a hairline between them ---- */
+.rows { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.rows:empty { display: none; }
+.rows li { display: flex; align-items: center; gap: 8px; height: 36px; }
+.rows li + li { border-top: 1px solid var(--line); }
+.rows .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .kind { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-3); }
+.rows button { height: 28px; margin-right: -8px; padding: 0 8px; border-radius: 6px; background: none; box-shadow: none; font-weight: 400; font-size: 13px; color: var(--text-2); }
+.rows button:hover { color: var(--text); background: var(--raised); }
+/* A long list of your own scrolls inside its card and leaves the board alone. */
+#sources, #sites { max-height: 160px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; border-top: 1px solid var(--line); }
+#sources button, #sites button { margin-right: 0; }
+#add-source, #add-site { grid-template-columns: 1fr auto; gap: 8px; }
+#source-error:empty, #rules-date:empty { display: none; }
+
+/* ---- narrower windows: the scene becomes a band across the top ---- */
+@media (max-width: 1000px) {
+  body { display: block; }
+  .side { position: relative; height: auto; }
+  .side img { object-position: 50% 58%; }
+  .side-in { height: auto; min-height: 200px; padding: 24px; }
+  .side .name { font-size: 44px; line-height: 44px; }
+  main { padding: 16px; }
+}
+@media (max-width: 480px) {
+  .sample, .stats .split { grid-template-columns: 1fr; }
+  .stats-grid { flex-direction: column; align-items: flex-start; gap: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glide { transition-property: opacity; }
+}

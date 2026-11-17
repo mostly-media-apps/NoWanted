@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No Wanted settings</title>
+<link rel="stylesheet" href="../ui/ui.css">
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<aside class="side">
+  <img src="../art/scene.svg" alt=""><img class="night" src="../art/scene-night.svg" alt="">
+  <div class="side-in">
+    <div class="brand">
+      <h1 class="name display" aria-label="No Wanted">No<i class="hair"></i>wanted</h1>
+      <p class="sub">for <span class="redact">GTA 6</span></p>
+    </div>
+    <label class="power"><span class="switch" title="Turn No Wanted on or off"><input type="checkbox" id="enabled" aria-label="No Wanted on"><span class="track"><span class="knob"></span></span></span><span id="power-word">On</span></label>
+    <footer>
+    <p>Nothing about you leaves this browser</p>
+    <span class="foot-end"><a href="mailto:bugs@nowanted.online?subject=No Wanted%20missed%20something">Report a miss</a><a id="support" target="_blank" rel="noopener" hidden>Support No Wanted</a><a href="https://nowanted.online/privacy.html" target="_blank" rel="noopener">Privacy</a><span class="mono" id="version"></span></span>
+    </footer>
+  </div>
+</aside>
+<main>
+<div class="board">
+  <section class="card stats" aria-labelledby="stats-h">
+    <div class="stats-top">
+      <div>
+        <h2 id="stats-h">Stats</h2>
+        <p class="choice-note" id="s-since"></p>
+      </div>
+      <button type="button" id="reset-stats" class="quiet">Reset</button>
+    </div>
+    <div class="stats-grid">
+      <div class="hero-n"><span class="big display" id="s-total">0</span><span class="choice-note">spoilers blocked</span></div>
+      <dl class="trio">
+        <div><dt>Today</dt><dd class="display" id="s-today">0</dd></div>
+        <div><dt>This week</dt><dd class="display" id="s-week">0</dd></div>
+      </dl>
+    </div>
+    <div class="week" id="s-days" aria-label="The last seven days"></div>
+    <div class="split">
+      <section><h3>What it caught</h3><ul class="bars-list" id="s-kinds"></ul></section>
+      <section><h3>Where</h3><ul class="bars-list" id="s-sites"></ul></section>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Look</h2>
+    <div class="sample" aria-hidden="true">
+      <div class="tile">
+        <div class="shot"><svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice"><rect width="320" height="180" fill="#d9cdb8"/><rect y="122" width="320" height="58" fill="#a98f6c"/><ellipse cx="160" cy="130" rx="80" ry="9" fill="#8a7050" opacity="0.55"/><path d="M90 122c0-34 31-56 70-56s70 22 70 56c0 6-5 9-12 9H102c-7 0-12-3-12-9Z" fill="#c48240"/><path d="M103 108c6-20 27-33 55-34" fill="none" stroke="#e2a965" stroke-width="6" stroke-linecap="round"/><path d="M138 84c8 8 10 18 8 30M162 80c8 9 10 20 8 34M186 86c7 8 9 17 7 28" fill="none" stroke="#8b5524" stroke-width="3" stroke-linecap="round"/></svg><span class="mono">12:04</span></div>
+        <div class="tile-title">Sourdough for beginners</div>
+        <div class="tile-meta">Flour Hours · 2 days ago</div>
+      </div>
+      <div class="tile" id="sample">
+        <div class="shot dusk"><span class="mono">48:19</span></div>
+        <div class="tile-title">GTA 6 ending explained</div>
+        <div class="tile-meta"><span class="channel">Leonida Daily</span> <span class="when">· 3 hours ago</span></div>
+        <div class="frame"><span class="frame-tag" id="sample-tag">Spoilers</span></div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="blur">Strength</label>
+      <input type="range" id="blur" min="8" max="40" step="4">
+      <output class="mono" id="blur-out" for="blur"></output>
+    </div>
+    <div class="pair">
+      <span id="frame-label">Frame</span>
+      <div class="seg" id="frame" role="radiogroup" aria-labelledby="frame-label" style="--n:4">
+        <span class="thumb"></span>
+        <label><input type="radio" name="frame" value="sunset"><span class="chip sunset"></span>Sunset</label>
+        <label><input type="radio" name="frame" value="pink"><span class="chip pink"></span>Pink</label>
+        <label><input type="radio" name="frame" value="white"><span class="chip white"></span>White</label>
+        <label><input type="radio" name="frame" value="gray"><span class="chip gray"></span>Gray</label>
+      </div>
+    </div>
+    <div class="pair">
+      <span id="tag-label">Tag</span>
+      <div class="seg" id="tag" role="radiogroup" aria-labelledby="tag-label" style="--n:3">
+        <span class="thumb"></span>
+        <label><input type="radio" name="tag" value="Spoilers">Spoilers</label>
+        <label><input type="radio" name="tag" value="GTA 6">GTA 6</label>
+        <label><input type="radio" name="tag" value="Hidden">Hidden</label>
+      </div>
+    </div>
+    <div class="toggle">
+      <span><span id="l-badge">Count on the toolbar button</span><span class="choice-note">How many things are hidden on the open tab</span></span>
+      <label class="switch"><input type="checkbox" id="badge" aria-labelledby="l-badge"><span class="track"><span class="knob"></span></span></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>What to catch</h2>
+    <div class="choices" id="level" role="radiogroup" aria-label="What to catch">
+      <span class="glide"></span>
+      <label class="choice"><input type="radio" name="level" value="title"><span class="dot"></span>
+        <span><span class="choice-name">The title only</span><span class="choice-note">GTA 6, GTA VI and Grand Theft Auto VI, in any spelling, hashtag or language</span></span></label>
+      <label class="choice"><input type="radio" name="level" value="names"><span class="dot"></span>
+        <span><span class="choice-name">Names and places too</span><span class="choice-note">Adds Jason, Lucia, the rest of the cast, Leonida and Vice City</span></span></label>
+      <label class="choice"><input type="radio" name="level" value="wide"><span class="dot"></span>
+        <span><span class="choice-name">The whole series</span><span class="choice-note">Adds every GTA game, Rockstar and Take-Two, so older games blur as well</span></span></label>
+    </div>
+    <div class="stack">
+      <label for="extra">Your own words</label>
+      <textarea id="extra" rows="3" spellcheck="false" placeholder="One word or phrase per line"></textarea>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Pages and video</h2>
+    <div class="toggle">
+      <span><span id="l-pages">Cover whole pages about the game</span><span class="choice-note">A review, a video or a search for it gets one cover and a way back</span></span>
+      <label class="switch"><input type="checkbox" id="hidePages" aria-labelledby="l-pages"><span class="track"><span class="knob"></span></span></label>
+    </div>
+    <div class="toggle">
+      <span><span id="l-media">Stop video and sound in anything hidden</span><span class="choice-note">A blurred Short or Reel is paused and muted until you show it</span></span>
+      <label class="switch"><input type="checkbox" id="muteMedia" aria-labelledby="l-media"><span class="track"><span class="knob"></span></span></label>
+    </div>
+    <div class="toggle">
+      <span><span id="l-title">Hide the tab title of covered pages</span><span class="choice-note">The tab reads “Hidden page” while the cover is up</span></span>
+      <label class="switch"><input type="checkbox" id="maskTitle" aria-labelledby="l-title"><span class="track"><span class="knob"></span></span></label>
+    </div>
+    <div class="stack">
+      <span><span id="reveal-label">Clicking a blur</span><span class="choice-note">“Asks first” shows a confirm button. After a yes the box stays, and only the piece under your pointer (the title, or the thumbnail) unblurs</span></span>
+      <div class="seg" id="reveal" role="radiogroup" aria-labelledby="reveal-label" style="--n:2">
+        <span class="thumb"></span>
+        <label><input type="radio" name="reveal" value="click">Asks first</label>
+        <label><input type="radio" name="reveal" value="locked">Does nothing</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Sites left alone</h2>
+    <p class="choice-note" id="sites-empty"><strong class="bold-name">No Wanted</strong> runs on every site. Add one here to switch it off there</p>
+    <ul class="rows" id="sites"></ul>
+    <form id="add-site" class="field">
+      <input type="text" id="new-site" aria-label="Site" placeholder="example.com" autocomplete="off" spellcheck="false">
+      <button type="submit">Add</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Updates</h2>
+    <div class="toggle">
+      <span><span id="l-updates">Get new rules each day</span><span class="choice-note">New words and site fixes, in one small file downloaded once a day. Nothing about you is sent</span><span class="choice-note" id="rules-date"></span></span>
+      <label class="switch"><input type="checkbox" id="updates" aria-labelledby="l-updates"><span class="track"><span class="knob"></span></span></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Always blur</h2>
+    <p class="choice-note">Anything from these is hidden, whatever the post says. Visiting one covers the page</p>
+    <ul class="rows" id="presets"></ul>
+    <ul class="rows" id="sources"></ul>
+    <form id="add-source" class="field">
+      <input type="text" id="new-source" aria-label="Link, handle or subreddit" placeholder="Link, @handle or r/subreddit" autocomplete="off" spellcheck="false">
+      <button type="submit">Add</button>
+    </form>
+    <p class="choice-note" id="source-error" role="status"></p>
+  </section>
+</div>
+</main>
+<script src="../src/terms.js"></script>
+<script type="module" src="options.js"></script>
+</body>
+</html>
