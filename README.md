@@ -13,8 +13,7 @@
   <a href="#safari"><img alt="Safari: coming soon" src="https://img.shields.io/badge/Safari-coming%20soon-2b2236?style=flat-square&logo=safari&logoColor=ededed&labelColor=100d15"></a>
   <a href="#privacy"><img alt="Data collected: none" src="https://img.shields.io/badge/data%20collected-none-ff5aa8?style=flat-square&labelColor=100d15"></a>
   <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-2b2236?style=flat-square&labelColor=100d15">
-  <img alt="Manifest V3" src="https://img.shields.io/badge/manifest-v3-2b2236?style=flat-square&labelColor=100d15">
-  <a href="https://ko-fi.com/mostlymedia"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support%20No%20Wanted-2b2236?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15"></a>
+  <a href="https://ko-fi.com/mostlymedia"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support-2b2236?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15"></a>
 </p>
 
 <p align="center">
@@ -122,7 +121,7 @@ This writes `dist/nowanted-chrome-<version>.zip` and `dist/nowanted-firefox-<ver
 No Wanted is free, with no ads and nothing collected. If it saved the game for you, you can buy us a coffee.
 
 <p align="center">
-  <a href="https://ko-fi.com/mostlymedia"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support No Wanted on Ko-fi" height="36"></a>
+  <a href="https://ko-fi.com/mostlymedia"><img src="https://img.shields.io/badge/Ko--fi-buy%20us%20a%20coffee-ff5aa8?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15" alt="Support No Wanted on Ko-fi" height="32"></a>
 </p>
 
 <br>
