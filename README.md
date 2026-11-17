@@ -14,12 +14,14 @@
   <a href="#privacy"><img alt="Data collected: none" src="https://img.shields.io/badge/data%20collected-none-ff5aa8?style=flat-square&labelColor=100d15"></a>
   <img alt="Version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-2b2236?style=flat-square&labelColor=100d15">
   <img alt="Manifest V3" src="https://img.shields.io/badge/manifest-v3-2b2236?style=flat-square&labelColor=100d15">
+  <a href="https://ko-fi.com/mostlymedia"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support%20No%20Wanted-2b2236?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15"></a>
 </p>
 
 <p align="center">
   <a href="#install"><b>Install</b></a> &nbsp;·&nbsp;
   <a href="#what-it-does">What it does</a> &nbsp;·&nbsp;
   <a href="#privacy">Privacy</a> &nbsp;·&nbsp;
+  <a href="#support">Support</a> &nbsp;·&nbsp;
   <a href="https://nowanted.online">nowanted.online</a>
 </p>
 
@@ -114,6 +116,14 @@ The full policy is at [nowanted.online/privacy](https://nowanted.online/privacy.
 This writes `dist/nowanted-chrome-<version>.zip` and `dist/nowanted-firefox-<version>.zip`. You can also load this folder directly in Chrome with **Load unpacked**.
 
 </details>
+
+## Support
+
+No Wanted is free, with no ads and nothing collected. If it saved the game for you, you can buy us a coffee.
+
+<p align="center">
+  <a href="https://ko-fi.com/mostlymedia"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support No Wanted on Ko-fi" height="36"></a>
+</p>
 
 <br>
 
