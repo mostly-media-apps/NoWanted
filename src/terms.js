@@ -215,9 +215,36 @@
     return { any: !!quick, test, terms };
   }
 
-  // loose: drop the "nothing before it" rule. Used only to decide whether a
-  // container is worth looking inside, because a container's text runs its
-  // pieces together ("48:19" + "GTA 6 ending" reads as "48:19GTA 6 ending").
+  // Takes every "not followed by" rule out of a pattern, nested ones included.
+  function withoutNotAfter(source) {
+    let out = '';
+    for (let i = 0; i < source.length; i++) {
+      if (source[i] === '\\') {
+        out += source.slice(i, i + 2);
+        i++;
+      } else if (source.startsWith('(?!', i)) {
+        let depth = 0;
+        let inClass = false;
+        for (; i < source.length; i++) {
+          const c = source[i];
+          if (c === '\\') i++;
+          else if (inClass) inClass = c !== ']';
+          else if (c === '[') inClass = true;
+          else if (c === '(') depth++;
+          else if (c === ')' && --depth === 0) break;
+        }
+      } else out += source[i];
+    }
+    return out;
+  }
+
+  // loose: drop the "nothing before it" and "nothing after it" rules. Used only
+  // to decide whether a container is worth looking inside, because a
+  // container's text runs its pieces together: "48:19" + "GTA 6 ending" reads
+  // as "48:19GTA 6 ending", and a title with the line under it reads as
+  // "Download GTA VIOpen world" or "GTA 612 views". The loose matcher must
+  // never say no where the strict one would say yes to a piece inside, or
+  // that piece is never looked at.
   function buildMatcher(level, extraTerms, sourceTerms, loose, oldGame) {
     const depth = Math.max(0, LEVELS.indexOf(level));
     const parts = [...TITLE];
@@ -230,7 +257,7 @@
     }
     if (sourceTerms) parts.push(...sourceTerms);
     const source = parts.join('|');
-    return new RegExp(loose ? source.replace(/\(\?<!\[[^\]]*\]\)/g, '') : source, 'iu');
+    return new RegExp(loose ? withoutNotAfter(source.replace(/\(\?<!\[[^\]]*\]\)/g, '')) : source, 'iu');
   }
 
   // Styled letters (𝗚𝗧𝗔 𝟲, ＧＴＡ６, Ⅵ) and invisible characters hide the title

@@ -37,7 +37,7 @@
 [data-gsb="3"] { isolation: isolate !important; }
 [data-gsb="3"][data-gsb-rel] { position: relative !important; }
 [data-gsb="3"]::after {
-  content: "" !important; position: absolute !important; inset: -2px !important; z-index: 2147483000 !important;
+  content: "" !important; position: absolute !important; inset: var(--gsb-in, -2px) !important; z-index: 2147483000 !important;
   display: block !important; box-sizing: border-box !important; margin: 0 !important; padding: 0 !important;
   width: auto !important; height: auto !important;
   border: 2px solid transparent !important; border-radius: inherit !important;
@@ -83,16 +83,16 @@
   transition: none !important; animation: none !important; float: none !important;
 }
 
-/* The frame. It is there in every state. It sits 4px outside the card with
-   round corners (--gsb-r, set by content.js from the card's own radius), so it
-   never cuts across a rounded thumbnail or button inside a square card. On a
-   card that clips its overflow, content.js sets --gsb-o to 0 and the frame stays
-   on the inside edge, where the clip can't cut it off. The
-   mask keeps only the 2px border ring of a gradient background, so the line is
-   the same width all the way round, corners included. */
+/* The frame. It is there in every state: a 2px line, 4px outside the card,
+   with round corners (--gsb-r) that follow the card's own or its thumbnail's.
+   content.js works out each side from the room it has and sets --gsb-in, the
+   inset of the four sides: closer where a neighbour is close, on the card's
+   edge where something would clip it, 4px inside on a post that clips its own
+   paint. The mask keeps only the 2px border ring of a gradient background, so
+   the line is the same width all the way round, corners included. */
 [data-gsb="1"]::before {
   content: "" !important;
-  inset: calc(-1 * var(--gsb-o, 4px)) !important; width: auto !important; height: auto !important; padding: 0 !important;
+  inset: var(--gsb-in, -4px) !important; width: auto !important; height: auto !important; padding: 0 !important;
   display: block !important;
   border: 2px solid transparent !important; border-radius: var(--gsb-r, 16px) !important;
   clip-path: none !important;
@@ -119,7 +119,7 @@
    knows where it is: 136 by 32, starting 4px below the middle. */
 /* The panel and the frame share the one overlay, so the mask lets both through:
    the panel's shape on top of the border ring. */
-[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok])::before {
+[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok], [data-gsb-b])::before {
   content: "Show spoilers?" !important;
   display: flex !important; align-items: center !important; justify-content: center !important;
   padding-bottom: 36px !important;
@@ -129,14 +129,14 @@
   -webkit-mask-composite: source-over, xor !important;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='184' height='96'%3E%3Crect width='184' height='96' rx='12'/%3E%3C/svg%3E") center / 184px 96px no-repeat add, linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0) border-box !important;
 }
-[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok])::after {
+[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok], [data-gsb-b])::after {
   content: "Yes, let me peek" !important;
   top: 50% !important; left: 50% !important; right: auto !important; width: 136px !important; max-width: none !important; height: 32px !important;
   margin: 4px 0 0 -68px !important; padding: 0 !important; border-radius: 8px !important;
   background: #ededed !important; color: #171717 !important;
   font-size: 13px !important; line-height: 32px !important; font-weight: 600 !important;
 }
-[data-gsb="1"][data-gsb-ask][data-gsb-over]:not([data-gsb-ok])::after { background: #ffffff !important; }
+[data-gsb="1"][data-gsb-ask][data-gsb-over]:not([data-gsb-ok], [data-gsb-b])::after { background: #ffffff !important; }
 /* A short card has room for the button only. */
 [data-gsb="1"][data-gsb-ask][data-gsb-sm]:not([data-gsb-ok])::before {
   content: "" !important; padding: 0 !important;
@@ -147,3 +147,6 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='44'%3E%3Crect width='160' height='44' rx='10'/%3E%3C/svg%3E") center / 160px 44px no-repeat add, linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0) border-box !important;
 }
 [data-gsb="1"][data-gsb-ask][data-gsb-sm]:not([data-gsb-ok])::after { margin-top: -16px !important; }
+/* A card too narrow for the button asks in the bubble next to it, and shows
+   it is the one being asked about with a heavier frame, as a small item does. */
+[data-gsb="1"][data-gsb-b][data-gsb-ask]:not([data-gsb-ok])::before { border-width: 4px !important; }

@@ -30,6 +30,13 @@
         'ytm-video-with-context-renderer', 'ytm-compact-video-renderer', 'ytm-rich-item-renderer',
         'ytm-reel-item-renderer', 'ytm-comment-renderer', 'ytm-playlist-video-renderer',
         '.ytSuggestionComponentSuggestion', '.sbsb_c',
+        // Sponsored results and promoted videos, in search, on the home page
+        // and next to a video. An ad for the game is hidden like any post.
+        'ytd-ad-slot-renderer', 'ytd-promoted-sparkles-web-renderer', 'ytd-promoted-sparkles-text-search-renderer',
+        'ytd-promoted-video-renderer', 'ytd-compact-promoted-video-renderer', 'ytd-display-ad-renderer',
+        'ytd-search-pyv-renderer', 'ytd-banner-promo-renderer', 'ytd-statement-banner-renderer',
+        'ytd-brand-video-singleton-renderer', 'ytd-brand-video-shelf-renderer', 'ytd-video-masthead-ad-v3-renderer',
+        'ytd-primetime-promo-renderer', 'ytm-promoted-sparkles-web-renderer', 'ytm-promoted-video-renderer',
       ],
       signals: [
         'ytd-watch-metadata h1', 'ytd-watch-metadata #title', 'ytm-slim-video-metadata-section-renderer',
@@ -46,6 +53,8 @@
       plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"]))',
       live: '[data-testid="caret"]',
       tag: [12, 80], // the label sits left of the post's own buttons: 12px down, 80px in from the right
+      // A promoted post is an ordinary article here, and a promoted trend an
+      // ordinary trend, so both are covered by the same cards.
       cards: [
         'article[data-testid="tweet"]', 'article[role="article"]', 'article', '[data-testid="trend"]',
         '[data-testid="UserCell"]', '[data-testid="typeaheadResult"]', '[data-testid="conversation"]',
@@ -58,7 +67,9 @@
       by: 'a[href^="/r/"], a[href^="/user/"]',
       byAttr: ['subreddit-prefixed-name', 'author'],
       cards: [
-        'shreddit-post', 'shreddit-comment', 'shreddit-ad-post', 'shreddit-profile-comment',
+        'shreddit-post', 'shreddit-comment', 'shreddit-profile-comment',
+        // promoted posts: in the feed, on a post's page, in the comments and beside them
+        'shreddit-ad-post', 'shreddit-comments-page-ad', 'shreddit-comment-tree-ad', 'shreddit-sidebar-ad', 'shreddit-dynamic-ad-link',
         '[data-testid="search-post-unit"]', '[data-testid="search-sdui-post"]', '[data-testid="post-container"]',
         'reddit-pdp-right-rail-post', 'div.thing', 'li[rpl]', 'faceplate-tracker[source="search"]',
         'a[data-testid="subreddit-recommendation"]',

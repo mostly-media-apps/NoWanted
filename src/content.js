@@ -263,30 +263,19 @@
       if (n.nodeType === 3 && n.nodeValue.trim()) return '3'; // bare text: blurred with its element
     }
     const box = el.getBoundingClientRect();
-    if (box.width && (box.width < 160 || box.height < 48)) return '3';
-    if (box.height && box.height < 88) el.setAttribute('data-gsb-sm', '');
-    // The frame sits 4px outside the card with round corners, so it never runs
-    // across the card's own rounded thumbnail or buttons. Its radius follows
-    // the card's (plus the 4px gap), and is at least 16px for square cards.
-    // A card that clips its own paint, or that sits against the edge of a
-    // parent that clips (a shelf, a carousel), would have that frame cut off,
-    // so there it stays on the card's inside edge and takes the card's corners.
-    if (clipsPaint(cs) || nearClippingEdge(el, box)) {
-      const square = !(parseFloat(cs.borderTopLeftRadius) > 0);
-      if (square && box.width >= 240 && box.height >= 96) {
-        // A square card that clips (a post in a feed that runs edge to edge):
-        // the frame sits 4px inside with round corners. Drawn on the very edge,
-        // the frames of two posts in a row touch and read as one thick line.
-        el.style.setProperty('--gsb-o', '-4px');
-        el.style.setProperty('--gsb-r', '12px');
-      } else {
-        el.style.setProperty('--gsb-o', '0px');
-        el.style.setProperty('--gsb-r', cs.borderRadius || '0px');
-      }
-    } else {
-      const r = parseFloat(cs.borderTopLeftRadius) || 0;
-      el.style.setProperty('--gsb-r', Math.max(16, r + 4) + 'px');
-    }
+    // A tile that holds a picture is a card with a label even when it is
+    // narrow (a profile grid); anything else this small is blurred as it is.
+    const tile = box.width >= 96 && box.height >= 96 && !!el.querySelector(PART_MEDIA);
+    if (box.width && (box.width < 160 || (box.height && box.height < 48)) && !tile) return '3';
+    // Room for the question: the panel with its button needs 192 by 88, the
+    // button alone 168 across, and a narrower card asks in the bubble.
+    if (box.width && box.width < 168) el.setAttribute('data-gsb-b', '');
+    else if (box.height && (box.height < 88 || box.width < 192)) el.setAttribute('data-gsb-sm', '');
+    const around = [];
+    const [inset, radius] = frameFor(el, cs, box, around);
+    el.style.setProperty('--gsb-in', inset);
+    el.style.setProperty('--gsb-r', radius);
+    for (const n of around) reframe(n);
     if (adapter?.tag) {
       el.style.setProperty('--gsb-tag-y', adapter.tag[0] + 'px');
       el.style.setProperty('--gsb-tag-x', adapter.tag[1] + 'px');
@@ -303,18 +292,249 @@
     return cs.overflowX !== 'visible' || cs.overflowY !== 'visible' || cs.clipPath !== 'none'
       || /paint|strict|content/.test(cs.contain) || cs.contentVisibility === 'auto' || cs.contentVisibility === 'hidden';
   }
-  // Is the card within the frame's 4px of a clipping parent's edge? Looks a few
-  // levels up, through shadow roots too.
-  function nearClippingEdge(el, box) {
+
+  // ---------- where the frame sits ----------
+
+  // The frame is a 2px line that sits 4px outside the card, with 4px between
+  // it and anything else. Each side is worked out on its own, from the room
+  // that side has, and the result goes to the CSS as --gsb-in (the inset of
+  // each side, so a negative number is outside the card).
+  const FRAME_OUT = 4;
+  const SIDES = ['top', 'right', 'bottom', 'left'];
+
+  // Room on each side before something that clips, up to the limit. Looks a
+  // few levels up, through shadow roots too. A side the card already sticks
+  // out of is being scrolled past, not resting against the edge, so that edge
+  // does not count: the frame would be scrolled out of view there anyway.
+  function clipRoom(el, box, limit) {
+    const room = { top: limit, right: limit, bottom: limit, left: limit };
     let up = el.parentElement || el.getRootNode().host;
-    for (let i = 0; up && i < 8 && up !== document.documentElement; i++) {
+    for (let i = 0; up && i < 8 && up !== root; i++) {
       if (clipsPaint(getComputedStyle(up))) {
         const r = up.getBoundingClientRect();
-        if (box.left - r.left < 4 || r.right - box.right < 4 || box.top - r.top < 4 || r.bottom - box.bottom < 4) return true;
+        const d = { top: box.top - r.top, right: r.right - box.right, bottom: r.bottom - box.bottom, left: box.left - r.left };
+        for (const k of SIDES) if (d[k] > -1 && d[k] < room[k]) room[k] = Math.max(0, Math.floor(d[k]));
       }
       up = up.parentElement || up.getRootNode().host;
     }
-    return false;
+    return room;
+  }
+
+  // The gap to the nearest look-alike on each side: the cards before and after
+  // this one in its row, column or grid. Wrappers that hold one card each are
+  // stepped through, so the gap is measured card to card. Also returns the
+  // neighbours that are close enough to matter (near).
+  function neighbourGaps(el, box) {
+    const gap = { top: Infinity, right: Infinity, bottom: Infinity, left: Infinity };
+    const near = [];
+    let cell = el;
+    let depth = 0;
+    while (depth < 4 && cell.parentElement && cell.parentElement.childElementCount === 1 && !WALL.has(cell.parentElement.tagName)) {
+      cell = cell.parentElement;
+      depth++;
+    }
+    const measure = (sib) => {
+      let inner = sib;
+      for (let i = 0; i < depth && inner.childElementCount === 1; i++) inner = inner.firstElementChild;
+      const s = inner.getBoundingClientRect();
+      if (!s.width || !s.height) return;
+      const gx = Math.max(s.left - box.right, box.left - s.right);
+      const gy = Math.max(s.top - box.bottom, box.top - s.bottom);
+      let k = null;
+      if (gx > -1 && gy < 0) k = s.left >= box.right - 1 ? 'right' : 'left';
+      else if (gy > -1 && gx < 0) k = s.top >= box.bottom - 1 ? 'bottom' : 'top';
+      if (!k) return;
+      const g = Math.max(0, k === 'left' || k === 'right' ? gx : gy);
+      gap[k] = Math.min(gap[k], g);
+      if (g < 12) near.push(inner);
+    };
+    const STEPS = ['previousElementSibling', 'nextElementSibling'];
+    for (const step of STEPS) {
+      let sib = cell[step];
+      for (let n = 0; sib && n < 12; n++, sib = sib[step]) {
+        if (sameKind(cell, sib)) measure(sib); // not a heading, a divider or a spacer
+      }
+    }
+    // A grid built from rows: the cards above and below are in the next rows.
+    const row = cell.parentElement;
+    if (row && !WALL.has(row.tagName)) {
+      for (const step of STEPS) {
+        const other = row[step];
+        if (!other || !sameKind(row, other)) continue;
+        let n = 0;
+        for (const c of other.children) {
+          if (n++ >= 12) break;
+          if (sameKind(cell, c)) measure(c);
+        }
+      }
+    }
+    return { gap, near };
+  }
+
+  // How far out a side sits with a neighbour that close. With 12px or more
+  // between two cards each frame takes its full 4px. From 8px the frames move
+  // in so 4px stays between them. Closer than that there is no room for two
+  // lines, so both land on the same pixels and the cards share one line, the
+  // way cells in a table do, instead of showing a double one.
+  function outFor(gap) {
+    if (gap >= 12) return FRAME_OUT;
+    if (gap >= 8) return Math.floor((gap - 4) / 2);
+    return Math.min(FRAME_OUT, Math.floor((gap + 2) / 2));
+  }
+
+  // The corner radius of what sits in the card's own top left corner (its
+  // thumbnail, as a rule), and whether a square picture fills that corner.
+  function cornerOf(el, box) {
+    let n = el.firstElementChild;
+    for (let i = 0; n && i < 6; i++, n = n.firstElementChild) {
+      const r = n.getBoundingClientRect();
+      if (Math.abs(r.left - box.left) > 1 || Math.abs(r.top - box.top) > 1) break;
+      const cs = getComputedStyle(n);
+      const radius = parseFloat(cs.borderTopLeftRadius) || 0;
+      if (radius) return { radius, square: false };
+      if (n.matches(PART_MEDIA)) return { radius: 0, square: true };
+    }
+    return { radius: 0, square: false };
+  }
+
+  // Does the card draw a border of its own, all the way round? It may be on
+  // the card or on the one box that fills it. Returns that border's corner
+  // radius, or null.
+  const hasLine = (cs, side) => parseFloat(cs[`border${side}Width`]) > 0 && cs[`border${side}Style`] !== 'none' && cs[`border${side}Style`] !== 'hidden'
+    && !/^transparent$|,\s*0\)$|\/\s*0\)$/.test(cs[`border${side}Color`]);
+  const bordered = (cs) => hasLine(cs, 'Top') && hasLine(cs, 'Right') && hasLine(cs, 'Bottom') && hasLine(cs, 'Left');
+  function ownBorder(el, cs, box) {
+    if (bordered(cs)) return cs.borderTopLeftRadius;
+    let n = el.firstElementChild;
+    for (let i = 0; n && i < 3 && n.parentElement.childElementCount === 1; i++, n = n.firstElementChild) {
+      const r = n.getBoundingClientRect();
+      if (Math.abs(r.left - box.left) > 1 || Math.abs(r.top - box.top) > 1 || Math.abs(r.right - box.right) > 1 || Math.abs(r.bottom - box.bottom) > 1) break;
+      const ncs = getComputedStyle(n);
+      if (bordered(ncs)) return ncs.borderTopLeftRadius;
+    }
+    return null;
+  }
+
+  // [inset, radius] for a framed card. The close neighbours it measured
+  // against are added to around, when given.
+  function frameFor(el, cs, box, around) {
+    const own = parseFloat(cs.borderTopLeftRadius) || 0;
+    // A card with a border of its own takes the frame on that border, with the
+    // border's corners. Drawn 4px outside it, the two lines read as a double
+    // frame. (The frame is placed from inside the card's border, so the border's
+    // width is how far out it goes; a card that clips keeps it just inside.)
+    const line = ownBorder(el, cs, box);
+    if (line !== null && !clipsPaint(cs)) {
+      const w = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(cs[`border${k}Width`]) || 0);
+      return [w.every((v) => v === w[0]) ? `${-w[0]}px` : w.map((v) => `${-v}px`).join(' '), line];
+    }
+    if (clipsPaint(cs)) {
+      // A card that clips its own paint would cut off a frame drawn outside
+      // it. A square one that is big enough (a post in a feed that runs edge
+      // to edge) gets the frame 4px inside with round corners: drawn on the
+      // very edge, the frames of two posts in a row touch and read as one
+      // thick line. Any other takes the frame on its edge, with its corners.
+      if (!own && box.width >= 240 && box.height >= 96) return ['4px', '12px'];
+      return ['0px', cs.borderRadius || '0px'];
+    }
+    const room = clipRoom(el, box, FRAME_OUT);
+    const { gap, near } = neighbourGaps(el, box);
+    if (around) around.push(...near);
+    const out = SIDES.map((k) => Math.min(room[k], outFor(gap[k])));
+    const least = Math.min(...out);
+    // The frame's corners follow the card's, or those of the thumbnail in its
+    // corner, plus the distance out. A square picture that fills the corner
+    // keeps them tight, so its corners do not poke out past the line.
+    const corner = own ? null : cornerOf(el, box);
+    const radius = own ? Math.max(4, own + least)
+      : corner.radius ? Math.max(4, corner.radius + least)
+        : corner.square ? 4 + 2 * Math.max(0, least)
+          : Math.max(8, 12 + least);
+    const inset = out.every((v) => v === out[0]) ? `${-out[0]}px` : out.map((v) => `${-v}px`).join(' ');
+    return [inset, radius + 'px'];
+  }
+
+  // Sites add the cards of a list one after another, so a card is often
+  // hidden before the next one exists. When that one is hidden too, the frame
+  // of the card before it is worked out again, now with its neighbour there.
+  function reframe(el) {
+    if (!el.isConnected || el.getAttribute('data-gsb') !== '1') return;
+    const [inset, radius] = frameFor(el, getComputedStyle(el), el.getBoundingClientRect());
+    if (el.style.getPropertyValue('--gsb-in') !== inset) el.style.setProperty('--gsb-in', inset);
+    if (el.style.getPropertyValue('--gsb-r') !== radius) el.style.setProperty('--gsb-r', radius);
+  }
+
+  // ---------- where the label sits ----------
+
+  // The label sits in the card's top right corner, 8px in. If one of the
+  // site's own buttons is there (the three dots on a YouTube result, the
+  // arrow on a question), the label moves to the left of it, 4px clear and in
+  // line with it, so the button stays in view and the two read as one row.
+  // Pieces that are blurred anyway may sit under the label. Sites with a
+  // fixed spot for it (adapter.tag) keep that.
+  const TAG_IN = 8;
+  const TAG_CLEAR = 4;
+  const CONTROL = 'button,[role="button"],summary,[data-gsb-live],[data-gsb-keep]';
+  function placeTag(card) {
+    if (adapter?.tag || !card.isConnected || card.getAttribute('data-gsb') !== '1' || card.hasAttribute('data-gsb-ask')) return;
+    const box = card.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const cs = getComputedStyle(card);
+    const tag = getComputedStyle(card, '::after');
+    const w = parseFloat(tag.width) || 0;
+    const h = parseFloat(tag.height) || 20;
+    if (!w) return;
+    const right = box.right - (parseFloat(cs.borderRightWidth) || 0);
+    const top = box.top + (parseFloat(cs.borderTopWidth) || 0);
+    const inWay = [];
+    for (const c of card.querySelectorAll(CONTROL)) {
+      if (c.closest('[data-gsb-part]') || c.querySelector('[data-gsb-part]')) continue;
+      const r = c.getBoundingClientRect();
+      if (!r.width || !r.height || r.width > box.width * 0.6 || r.height > 72 || r.top - top > 72) continue;
+      if (c.checkVisibility && !c.checkVisibility({ opacityProperty: true, visibilityProperty: true, checkOpacity: true, checkVisibilityCSS: true })) continue;
+      inWay.push(r);
+    }
+    const hit = (x, y) => inWay.find((o) => o.left < right - x + TAG_CLEAR - 0.5 && o.right > right - x - w - TAG_CLEAR + 0.5 && o.top < top + y + h && o.bottom > top + y);
+    let x = TAG_IN;
+    let y = TAG_IN;
+    for (let i = 0; i < 4; i++) {
+      const o = hit(x, y);
+      if (!o) break;
+      const nx = Math.ceil(right - o.left + TAG_CLEAR);
+      if (nx + w > box.width - TAG_IN) break; // no room to its left
+      x = nx;
+      const ny = Math.round(o.top + o.height / 2 - h / 2 - top);
+      if (ny >= 4 && Math.abs(ny - TAG_IN) <= 16) y = ny;
+    }
+    if (hit(x, y)) {
+      x = TAG_IN;
+      y = TAG_IN;
+    }
+    const want = x === TAG_IN && y === TAG_IN ? ['', ''] : [y + 'px', x + 'px'];
+    if (card.style.getPropertyValue('--gsb-tag-y') !== want[0] || card.style.getPropertyValue('--gsb-tag-x') !== want[1]) {
+      if (want[0]) {
+        card.style.setProperty('--gsb-tag-y', want[0]);
+        card.style.setProperty('--gsb-tag-x', want[1]);
+      } else {
+        card.style.removeProperty('--gsb-tag-y');
+        card.style.removeProperty('--gsb-tag-x');
+      }
+    }
+  }
+
+  // A small item's frame sits 2px outside it. Where that would be cut off (the
+  // item clips itself, as a line that ends in an ellipsis does, or it sits
+  // tight inside a row that clips), the frame goes on the item's own edge.
+  function fitSmall(el) {
+    if (BARE.has(el.tagName) || !el.isConnected) return;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'inline') return;
+    let tight = clipsPaint(cs);
+    if (!tight) {
+      const room = clipRoom(el, el.getBoundingClientRect(), 2);
+      tight = SIDES.some((k) => room[k] < 2);
+    }
+    if (tight) el.style.setProperty('--gsb-in', '0px');
   }
 
   const GENERIC_BY = '[rel="author"],[itemprop="author"],.author,.byline,.channel-name,.username';
@@ -354,12 +574,49 @@
   // the box goes on the small wrapper around it.
   const BARE = new Set(['IMG', 'VIDEO', 'IFRAME', 'CANVAS', 'EMBED', 'OBJECT', 'svg', 'SVG']);
   function frameable(el) {
-    if (!BARE.has(el.tagName) || !el.isConnected) return el;
+    if (!el.isConnected) return el;
+    // A custom element the site left at "display: inline" around one block
+    // (YouTube's ad slot) has no box to draw on either: the block inside is it.
+    for (let i = 0; i < 3 && !BARE.has(el.tagName) && el.childElementCount === 1 && getComputedStyle(el).display === 'inline'
+      && getComputedStyle(el.firstElementChild).display !== 'inline' && !BARE.has(el.firstElementChild.tagName); i++) el = el.firstElementChild;
+    if (!BARE.has(el.tagName)) return el;
     const box = mediaFrame(el, el.getBoundingClientRect());
     if (box !== el) return box;
     const up = el.parentElement;
     if (up && !WALL.has(up.tagName) && up.textContent.trim().length <= 160) return up;
     return el;
+  }
+
+  // A card is often hidden before the site has finished building it: an ad
+  // slot with no height yet, a post whose picture has not loaded. Its look
+  // (card or small item, room for the question, where the frame and the label
+  // sit) is worked out again whenever its size changes.
+  const sized = new WeakMap(); // hidden item -> the size its look was worked out for
+  const sizeOf = (el) => {
+    const box = el.getBoundingClientRect();
+    return Math.round(box.width) + 'x' + Math.round(box.height);
+  };
+  const watcher = typeof ResizeObserver === 'function'
+    ? new ResizeObserver((entries) => {
+      for (const e of entries) refit(e.target);
+    })
+    : null;
+  function refit(el) {
+    const was = el.getAttribute('data-gsb');
+    if (!el.isConnected || !blurred.has(el) || (was !== '1' && was !== '3')) return;
+    const size = sizeOf(el);
+    if (sized.get(el) === size || el.hasAttribute('data-gsb-ask')) return;
+    sized.set(el, size);
+    for (const name of ['data-gsb-sm', 'data-gsb-b']) el.removeAttribute(name);
+    for (const name of ['--gsb-r', '--gsb-in']) el.style.removeProperty(name);
+    const mode = modeFor(el);
+    if (mode === '3') fitSmall(el);
+    if (mode !== was) {
+      el.setAttribute('data-gsb', mode);
+      if (mode === '3') for (const p of el.querySelectorAll('[data-gsb-part]')) p.removeAttribute('data-gsb-part');
+      else markParts(el);
+    }
+    if (mode === '1') placeTag(el);
   }
 
   function blur(el) {
@@ -371,10 +628,16 @@
     }
     for (const inner of el.querySelectorAll(HIDDEN)) clear(inner);
     const mode = modeFor(el);
+    if (mode === '3') fitSmall(el);
     el.setAttribute('data-gsb', mode);
     if (mode !== '3') markParts(el);
     markLive(el);
+    if (mode === '1') placeTag(el);
     blurred.add(el);
+    if (mode !== '2') {
+      sized.set(el, sizeOf(el));
+      watcher?.observe(el);
+    }
     tally(el, kindOf(el, mode));
     gateAll(el);
     report();
@@ -395,8 +658,8 @@
       p.removeAttribute('data-gsb-keep');
       p.removeAttribute('data-gsb-live');
     }
-    for (const name of ['data-gsb-rel', 'data-gsb-by', 'data-gsb-ask', 'data-gsb-sm', 'data-gsb-ok', 'data-gsb-over']) el.removeAttribute(name);
-    for (const name of ['--gsb-r', '--gsb-o', '--gsb-tag-y', '--gsb-tag-x']) el.style.removeProperty(name);
+    for (const name of ['data-gsb-rel', 'data-gsb-by', 'data-gsb-ask', 'data-gsb-sm', 'data-gsb-b', 'data-gsb-ok', 'data-gsb-over']) el.removeAttribute(name);
+    for (const name of ['--gsb-r', '--gsb-in', '--gsb-tag-y', '--gsb-tag-x']) el.style.removeProperty(name);
     if (asking === el) hideBubble();
   }
 
@@ -404,6 +667,7 @@
     strip(el);
     el.removeAttribute('data-gsb');
     blurred.delete(el);
+    watcher?.unobserve(el);
     releaseAll(el);
   }
 
@@ -423,6 +687,22 @@
   }
 
   const PART_MEDIA = 'img,video,picture,canvas,iframe,svg,object,embed,[style*="background-image"]';
+  const BUTTON = 'button,[role="button"],summary';
+  // A button with no words and no picture in it, no bigger than 56px: three
+  // dots, an arrow, a close cross. Remembered per button, since a card is
+  // split into pieces again every time its content changes.
+  const iconButtons = new WeakMap();
+  function iconButton(b) {
+    if (!b) return false;
+    let is = iconButtons.get(b);
+    if (is === undefined) {
+      const r = b.getBoundingClientRect();
+      is = !!r.width && r.width <= 56 && r.height <= 56 && !b.textContent.trim()
+        && !b.querySelector('img,video,picture,canvas,iframe,object,embed,[style*="background-image"]');
+      if (r.width) iconButtons.set(b, is);
+    }
+    return is;
+  }
 
   // Splits a card into pieces, each blurred in its own box: every line of
   // text, every picture or video, and every empty leaf (often a CSS
@@ -446,8 +726,9 @@
         return;
       }
       // The site's own furniture (the avatar, the row of buttons, the menu)
-      // says nothing about the game and stays as it is.
-      if (within(el, adapter?.plain)) return;
+      // says nothing about the game and stays as it is. So does any small
+      // button that is only an icon, on every site.
+      if (within(el, adapter?.plain) || iconButton(within(el, BUTTON))) return;
       if (keeps.some((k) => el.contains(k))) {
         // Split around the channel: take the other branches instead.
         for (const c of el.children) if (!SKIP_TAG.has(c.tagName)) add(c, kind === 't' && !c.textContent.trim() ? 'm' : kind);
@@ -508,7 +789,7 @@
   const askTimers = new WeakMap();
   function press(el, e) {
     if (el.hasAttribute('data-gsb-ok')) return;
-    const boxed = el.getAttribute('data-gsb') === '1';
+    const boxed = el.getAttribute('data-gsb') === '1' && !el.hasAttribute('data-gsb-b'); // room for its own button
     const keyboard = !e || e.detail === 0;
     if (!el.hasAttribute('data-gsb-ask')) {
       el.setAttribute('data-gsb-ask', '');
@@ -670,12 +951,16 @@
   function recheck(el) {
     if (!el.isConnected) {
       blurred.delete(el);
+      watcher?.unobserve(el);
       return;
     }
     if (collect(el, []).length === 0) clear(el);
     else {
       if (el.getAttribute('data-gsb') !== '3') markParts(el);
       markLive(el);
+      placeTag(el); // the site's buttons often arrive after the card does
+      // Sites put the video into a post late, often after it is hidden.
+      gateAll(el);
     }
   }
 
@@ -699,6 +984,9 @@
   // The mark hold.js reads in the page's own world: while it is on a video,
   // the site cannot start it or turn its sound on.
   const HOLD = 'data-gsb-hold';
+  // And the mark on <html> that tells hold.js No Wanted is on and stopping
+  // media, so it can also refuse a video it finds inside a hidden post itself.
+  const quiet = () => root.toggleAttribute('data-gsb-quiet', active && S.muteMedia);
   // Where hold.js is not running (an older Safari), a site can still start the
   // video again each time it is paused. After a few rounds the pausing stops
   // and the video is only kept silent, so the page never gets stuck in a loop.
@@ -720,7 +1008,9 @@
       if (!gated.has(m)) gated.set(m, m.muted);
       if (!m.hasAttribute(HOLD)) m.setAttribute(HOLD, '');
       if (!m.muted) m.muted = true;
-      if (!m.paused && !losingFight(m)) m.pause();
+      // pause() on a video that has not started yet also takes away its
+      // permission to start by itself (the autoplay attribute).
+      if (m.paused ? m.autoplay : !losingFight(m)) m.pause();
     } else release(m);
   }
 
@@ -732,8 +1022,16 @@
     fights.delete(m);
   }
 
-  const gateAll = (scope) => scope.querySelectorAll('video,audio').forEach(gate);
-  const releaseAll = (scope) => scope.querySelectorAll('video,audio').forEach(release);
+  // Every video and sound in there, inside shadow roots too.
+  function mediaIn(scope, out = []) {
+    if (scope.nodeType === 1 && scope.matches('video,audio')) out.push(scope);
+    for (const m of scope.querySelectorAll('video,audio')) out.push(m);
+    if (scope.shadowRoot) mediaIn(scope.shadowRoot, out);
+    for (const el of scope.querySelectorAll('*')) if (el.shadowRoot) mediaIn(el.shadowRoot, out);
+    return out;
+  }
+  const gateAll = (scope) => mediaIn(scope).forEach(gate);
+  const releaseAll = (scope) => mediaIn(scope).forEach(release);
 
   function onMedia(e) {
     const m = e.target;
@@ -837,7 +1135,7 @@
       }
     }
     for (const card of new Set([allowed, lastAllowed])) {
-      if (card?.isConnected) card.querySelectorAll('video,audio').forEach(gate);
+      if (card?.isConnected) gateAll(card);
     }
     lastAllowed = allowed;
   }
@@ -926,7 +1224,7 @@
       if (document.title === HIDDEN_PAGE_TITLE) document.title = realTitle;
       realTitle = null;
     }
-    document.querySelectorAll('video,audio').forEach(gate);
+    gateAll(document);
     report();
   }
 
@@ -1178,6 +1476,7 @@
     }
     for (const el of fresh) {
       if (!el.isConnected) continue;
+      if (pageOn) gateAll(el); // a player added under the page cover
       const found = scan(el);
       // A small piece ("6", "GTA") may finish a match that starts next to it.
       const parent = el.parentElement;
@@ -1216,7 +1515,11 @@
     if (reportTimer || !ready) return;
     reportTimer = setTimeout(() => {
       reportTimer = 0;
-      for (const el of blurred) if (!el.isConnected) blurred.delete(el);
+      for (const el of blurred) {
+        if (el.isConnected) continue;
+        blurred.delete(el);
+        watcher?.unobserve(el);
+      }
       send({ type: 'count', n: currentCount(), added, site });
       added = {};
     }, 400);
@@ -1264,6 +1567,7 @@
     active = S.enabled && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
     look();
     root.toggleAttribute('data-gsb-locked', S.reveal === 'locked');
+    quiet();
     veil?.sync();
     const after = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R]);
     if (!ready) {
@@ -1272,7 +1576,7 @@
       report();
     }
     if (before === after) {
-      document.querySelectorAll('video,audio').forEach(gate);
+      gateAll(document);
       return;
     }
     clearAll();
@@ -1303,6 +1607,7 @@
     setInterval(() => location.href !== lastUrl && onUrlChange(), 1000);
 
     look();
+    quiet();
     checkPage();
     scan(root);
     report();
