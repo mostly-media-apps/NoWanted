@@ -1308,9 +1308,15 @@
     }
   }
 
+  // Inside something that floats over the page: a cookie prompt, an app
+  // banner, a chat bubble. A fixed box that takes a quarter of the window or
+  // more is part of the page itself (YouTube pins a channel's whole header,
+  // banner included), so its pictures are boxed like the rest.
   function pinned(el) {
     for (let n = el, i = 0; n && n !== document.body && i < 12; n = n.parentElement, i++) {
-      if (getComputedStyle(n).position === 'fixed') return true;
+      if (getComputedStyle(n).position !== 'fixed') continue;
+      const r = n.getBoundingClientRect();
+      return r.width * r.height < innerWidth * innerHeight * 0.25;
     }
     return false;
   }

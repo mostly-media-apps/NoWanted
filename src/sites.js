@@ -68,8 +68,18 @@
     },
     {
       hosts: ['reddit.com'],
-      keep: 'a[href^="/user/"], a[href^="/r/"]',
-      by: 'a[href^="/r/"], a[href^="/user/"]',
+      // A post blurs as its title, its text and its picture. The line above
+      // the title (who posted, when, the three dots) and the share buttons are
+      // the site's furniture. The three dots keep working on a hidden post:
+      // that menu is where "Hide" and "Report" live.
+      blocks: '[slot="title"], [slot="text-body"], [slot="post-media-container"], [slot="thumbnail"]',
+      plain: '[slot="credit-bar"], [slot="share-button"], [slot="repost-button"], [slot="award-button"], [slot="full-post-link"], [slot="ssr-post-content-header"], faceplate-screen-reader-content, faceplate-loader',
+      live: '[slot="credit-bar"] shreddit-post-overflow-menu, [slot="credit-bar"] > span:last-child > span:last-child',
+      // The author and the subreddit stay readable. A post's title is a link
+      // into the subreddit too ("/r/name/comments/..."), and is not one of them:
+      // counted as the subreddit's name, a short title was left clear.
+      keep: 'a[href^="/user/"], a[href^="/r/"]:not([href*="/comments/"], [slot="title"], [slot="full-post-link"])',
+      by: 'a[href^="/r/"]:not([href*="/comments/"], [slot="title"], [slot="full-post-link"]), a[href^="/user/"]',
       byAttr: ['subreddit-prefixed-name', 'author'],
       cards: [
         'shreddit-post', 'shreddit-comment', 'shreddit-profile-comment',
