@@ -198,9 +198,22 @@
   // A comment inside a post is hidden by itself, not with the whole post.
   const COMMENT_ZONE = '[class*="comment" i],[id*="comment" i],[aria-label*="comment" i],[data-testid*="comment" i],[data-e2e*="comment" i],[class*="replies" i],[class*="chat" i]';
 
+  // closest(), carried on through shadow roots to the elements that host them.
+  // A site's own elements keep part of a post inside a shadow root (Reddit's
+  // row of buttons), and from in there plain closest() never finds the post.
+  function closestAcross(el, sel) {
+    for (let n = el; n; ) {
+      const found = n.closest(sel);
+      if (found) return found;
+      const top = n.getRootNode();
+      n = top instanceof ShadowRoot ? top.host : null;
+    }
+    return null;
+  }
+
   function pickTarget(match) {
     if (adapter) {
-      const card = match.closest(adapter.cards);
+      const card = closestAcross(match, adapter.cards);
       if (card) {
         const zone = match.closest(adapter.comments ? `${adapter.comments},${COMMENT_ZONE}` : COMMENT_ZONE);
         if (zone && zone !== card && card.contains(zone)) {
@@ -622,10 +635,8 @@
   function blur(el) {
     el = frameable(el);
     if (stateOf(el)) return; // already hidden, or shown by the person
-    let up = el.parentElement;
-    for (; up; up = up.parentElement) {
-      if (stateOf(up)) return; // an ancestor already decides
-    }
+    // An ancestor already decides, also from outside a shadow root.
+    if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) return;
     for (const inner of el.querySelectorAll(HIDDEN)) clear(inner);
     const mode = modeFor(el);
     if (mode === '3') fitSmall(el);
@@ -687,6 +698,14 @@
   }
 
   const PART_MEDIA = 'img,video,picture,canvas,iframe,svg,object,embed,[style*="background-image"]';
+  // Anything in there bigger than an emoji or an icon?
+  function hasPicture(block) {
+    for (const m of block.querySelectorAll(PART_MEDIA)) {
+      const r = m.getBoundingClientRect();
+      if (r.width > 32 || r.height > 32) return true;
+    }
+    return false;
+  }
   const BUTTON = 'button,[role="button"],summary';
   // A button with no words and no picture in it, no bigger than 56px: three
   // dots, an arrow, a close cross. Remembered per button, since a card is
@@ -721,8 +740,9 @@
       // so it blurs as one clean shape instead of a pile of small ones.
       const block = within(el, adapter?.blocks);
       if (block && !keeps.some((k) => block.contains(k))) {
-        const text = kind === 't' && !block.querySelector(PART_MEDIA);
-        if (!kinds.has(block) || text) kinds.set(block, text ? 't' : kinds.get(block) || 'm');
+        // A block with words and nothing bigger than an emoji or an icon in it
+        // is text, and gets the same blur as the text of the post next to it.
+        if (!kinds.has(block)) kinds.set(block, block.textContent.trim() && !hasPicture(block) ? 't' : 'm');
         return;
       }
       // The site's own furniture (the avatar, the row of buttons, the menu)
@@ -1453,7 +1473,7 @@
         titleTouched = true;
         continue;
       }
-      const owner = el.closest(HIDDEN);
+      const owner = closestAcross(el, HIDDEN);
       if (owner) {
         stale.add(owner);
         continue;

@@ -10,9 +10,11 @@
       // The thumbnail, the title and the line under it each blur as one shape.
       // The channel's picture and the three-dot menu stay, and the menu works
       // (that is where "Don't recommend channel" lives). The empty layers
-      // YouTube puts on every button for its press effect are left alone.
-      blocks: 'yt-thumbnail-view-model, ytd-thumbnail, a#thumbnail, h3, #video-title, .ytContentMetadataViewModelHost, #metadata-line, .metadata-snippet-container, #description-text',
-      plain: 'yt-interaction, [class*="TouchFeedbackShape"], [class*="ShapeStaticWash"], .ytLockupMetadataViewModelMenuButton, ytd-menu-renderer, .ytLockupMetadataViewModelAvatar, yt-decorated-avatar-view-model, #avatar-link, #channel-thumbnail, #avatar-section, #author-thumbnail, #subscribe-button, ytd-subscribe-button-renderer, yt-subscribe-button-view-model',
+      // YouTube puts on every button for its press effect are left alone, and
+      // so are its badges ("New", "4K", "LIVE"), which blurred into loose bits.
+      // A video's list of chapters blurs as one shape.
+      blocks: 'yt-thumbnail-view-model, ytd-thumbnail, a#thumbnail, h3, #video-title, .ytContentMetadataViewModelHost, #metadata-line, .metadata-snippet-container, #description-text, #expandable-metadata',
+      plain: 'yt-interaction, [class*="TouchFeedbackShape"], [class*="ShapeStaticWash"], badge-shape, [class*="ytBadgeShape"], ytd-badge-supported-renderer, .ytLockupMetadataViewModelMenuButton, ytd-menu-renderer, .ytLockupMetadataViewModelAvatar, yt-decorated-avatar-view-model, #avatar-link, #channel-thumbnail, #avatar-section, #author-thumbnail, #subscribe-button, ytd-subscribe-button-renderer, yt-subscribe-button-view-model',
       live: '.ytLockupMetadataViewModelMenuButton, ytd-menu-renderer',
       cards: [
         'ytd-rich-item-renderer', 'ytd-video-renderer', 'ytd-compact-video-renderer',
@@ -50,7 +52,10 @@
       // A post blurs as two clean shapes, its text and its media. The avatar,
       // the row of buttons and the menu stay as they are, and the menu works.
       blocks: '[data-testid="tweetText"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="card.wrapper"], [data-testid="article-cover-image"]',
-      plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"]))',
+      // The last entry is not X's: the Ground News extension adds a row under
+      // a post's buttons (its mark, a count and bias percentages). It says
+      // nothing about the game, and blurred it became a bright smear.
+      plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"])), [class*="tw-flex"][class*="tw-justify-end"]',
       live: '[data-testid="caret"]',
       tag: [12, 80], // the label sits left of the post's own buttons: 12px down, 80px in from the right
       // A promoted post is an ordinary article here, and a promoted trend an
@@ -128,6 +133,9 @@
     },
     {
       hosts: ['twitch.tv', 'kick.com'],
+      // The channel's picture, the LIVE mark and the viewer count are the
+      // site's furniture and stay as they are.
+      plain: '.tw-avatar, [class*="ScAvatar"], [class*="ScChannelStatusTextIndicator"], [class*="ScMediaCardStatWrapper"], .tw-media-card-stat',
       keep: '[data-a-target="preview-card-channel-link"], .chat-author__display-name, [data-test-selector="ChannelLink"]',
       by: '[data-a-target="preview-card-channel-link"], .chat-author__display-name, [data-test-selector="ChannelLink"]',
       cards: [
