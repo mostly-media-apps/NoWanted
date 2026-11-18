@@ -27,8 +27,8 @@
   -webkit-user-select: none !important;
   user-select: none !important;
 }
-[data-gsb="3"]:not([data-gsb-ok]:hover) :is(img, video, canvas, svg, picture, iframe, object, embed),
-:is(img, video, canvas, svg, picture, iframe, object, embed)[data-gsb="3"]:not([data-gsb-ok]:hover) {
+[data-gsb="3"]:not([data-gsb-ok]:hover) :is(img, video, canvas, svg, iframe, object, embed),
+:is(img, video, canvas, svg, iframe, object, embed)[data-gsb="3"]:not([data-gsb-ok]:hover) {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;
 }
 /* A bare picture with nothing to wrap it in: an outline is the one frame it can take. */

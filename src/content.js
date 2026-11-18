@@ -385,14 +385,13 @@
   }
 
   // How far out a side sits with a neighbour that close. With 12px or more
-  // between two cards each frame takes its full 4px. From 8px the frames move
-  // in so 4px stays between them. Closer than that there is no room for two
-  // lines, so both land on the same pixels and the cards share one line, the
-  // way cells in a table do, instead of showing a double one.
+  // between two cards each frame takes its full 4px. From 4px up the frames
+  // move in so that at least 4px stays between them. Closer than that there
+  // is no room for two lines, so both land on the same pixels and the cards
+  // share one line, the way cells in a table do, instead of showing a double one.
   function outFor(gap) {
-    if (gap >= 12) return FRAME_OUT;
-    if (gap >= 8) return Math.floor((gap - 4) / 2);
-    return Math.min(FRAME_OUT, Math.floor((gap + 2) / 2));
+    if (gap >= 4) return Math.min(FRAME_OUT, Math.floor((gap - 4) / 2));
+    return Math.floor((gap + 2) / 2);
   }
 
   // The corner radius of what sits in the card's own top left corner (its
@@ -500,8 +499,18 @@
     const right = box.right - (parseFloat(cs.borderRightWidth) || 0);
     const top = box.top + (parseFloat(cs.borderTopWidth) || 0);
     const inWay = [];
-    for (const c of card.querySelectorAll(CONTROL)) {
+    for (let c of card.querySelectorAll(CONTROL + ',svg')) {
       if (c.closest('[data-gsb-part]') || c.querySelector('[data-gsb-part]')) continue;
+      if (c.tagName === 'svg') {
+        // An icon that is not a button by name (the arrow on a question):
+        // what counts is the small round or square thing it sits in.
+        if (!smallIcon(c) || c.closest(CONTROL)?.closest('[data-gsb]') === card) continue;
+        for (let up = c.parentElement; up && up !== card; up = up.parentElement) {
+          const b = up.getBoundingClientRect();
+          if (b.width > 56 || b.height > 56) break;
+          c = up;
+        }
+      }
       const r = c.getBoundingClientRect();
       if (!r.width || !r.height || r.width > box.width * 0.6 || r.height > 72 || r.top - top > 72) continue;
       if (c.checkVisibility && !c.checkVisibility({ opacityProperty: true, visibilityProperty: true, checkOpacity: true, checkVisibilityCSS: true })) continue;
@@ -632,8 +641,13 @@
     if (mode === '1') placeTag(el);
   }
 
-  function blur(el) {
+  // Boxes put on pictures and videos because the page was shown anyway. They
+  // hold no words about the game, so a recheck must not clear them for that.
+  const mediaBoxes = new WeakSet();
+
+  function blur(el, asMedia) {
     el = frameable(el);
+    if (asMedia) mediaBoxes.add(el);
     if (stateOf(el)) return; // already hidden, or shown by the person
     // An ancestor already decides, also from outside a shadow root.
     if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) return;
@@ -697,7 +711,11 @@
     return true;
   }
 
-  const PART_MEDIA = 'img,video,picture,canvas,iframe,svg,object,embed,[style*="background-image"]';
+  // The picture itself, never the <picture> wrapper around it: sites give the
+  // wrapper no height and place the image over it. A blurred box becomes the
+  // anchor for what is placed inside it, so with the blur on the wrapper the
+  // image collapsed to nothing and the tile went flat (TikTok's profile grid).
+  const PART_MEDIA = 'img,video,canvas,iframe,svg,object,embed,[style*="background-image"]';
   // Anything in there bigger than an emoji or an icon?
   function hasPicture(block) {
     for (const m of block.querySelectorAll(PART_MEDIA)) {
@@ -705,6 +723,19 @@
       if (r.width > 32 || r.height > 32) return true;
     }
     return false;
+  }
+  // A drawn icon no bigger than 32px (an arrow, three dots, a tick) is the
+  // site's furniture on every site. Blurred, each one became a small smudge.
+  const smallIcons = new WeakMap();
+  function smallIcon(el) {
+    if (el.tagName !== 'svg') return false;
+    let is = smallIcons.get(el);
+    if (is === undefined) {
+      const r = el.getBoundingClientRect();
+      is = !!r.width && r.width <= 32 && r.height <= 32;
+      if (r.width) smallIcons.set(el, is);
+    }
+    return is;
   }
   const BUTTON = 'button,[role="button"],summary';
   // A button with no words and no picture in it, no bigger than 56px: three
@@ -770,9 +801,9 @@
     for (const el of card.getElementsByTagName('*')) {
       if (SKIP_TAG.has(el.tagName) || el.tagName === 'BR') continue;
       if (el.shadowRoot || el.matches(PART_MEDIA)) {
-        if (el.parentElement?.tagName !== 'PICTURE' && !el.parentElement?.closest('svg')) add(el, 'm');
-      } else if (!el.firstElementChild && !el.textContent.trim()) {
-        add(el, 'm');
+        if (!el.parentElement?.closest('svg') && !smallIcon(el)) add(el, 'm');
+      } else if (!el.firstElementChild && !el.textContent.trim() && !el.closest('svg') && el.tagName !== 'SOURCE' && el.tagName !== 'TRACK') {
+        add(el, 'm'); // not the shapes inside a drawing: the drawing is the piece, or a small icon left alone
       }
     }
 
@@ -974,7 +1005,10 @@
       watcher?.unobserve(el);
       return;
     }
-    if (collect(el, []).length === 0) clear(el);
+    // Nothing in it names the game any more: the site reused the element for
+    // something else. A picture boxed on a page shown anyway never did, and
+    // stays boxed for as long as the page is in that state.
+    if (collect(el, []).length === 0 && !(pageAbout && mediaBoxes.has(el))) clear(el);
     else {
       if (el.getAttribute('data-gsb') !== '3') markParts(el);
       markLive(el);
@@ -1061,6 +1095,7 @@
     for (const type of ['play', 'playing', 'volumechange', 'loadeddata']) {
       target.addEventListener(type, onMedia, true);
     }
+    for (const type of ['load', 'loadeddata']) target.addEventListener(type, onLoad, true);
   }
 
   // ---------- clicks on hidden items ----------
@@ -1284,27 +1319,45 @@
     boxMedia(document.documentElement);
   }
 
+  // On a page shown anyway, a picture that arrives later (a feed loading more
+  // as you scroll) has no size when it is added, so it is boxed when it loads.
+  const looked = new WeakMap(); // picture -> how often it was looked at again
+  const LOOK_AGAIN_MS = [50, 500, 2000];
+  function onLoad(e) {
+    const m = e.target;
+    if (pageAbout && active && m && m.nodeType === 1 && m.matches('img,video,iframe')) boxMedia(m);
+  }
+
   const VIDEO_FRAME = /youtube|youtu\.be|vimeo|twitch|tiktok|twitter|x\.com|instagram|facebook|streamable|dailymotion|jwplayer|brightcove/i;
-  const MEDIA = 'img,video,picture,canvas,iframe,svg,[style*="background-image"]';
+  const MEDIA = 'img,video,canvas,iframe,svg,[style*="background-image"]';
   function boxMedia(node) {
     if (!pageAbout || !active || node.nodeType !== 1) return;
     const found = node.matches(MEDIA) ? [node] : [...node.querySelectorAll(MEDIA)];
     for (const m of found) {
       if (m.closest(HIDDEN) || m.closest(SKIP_SEL) || m.closest('[data-gsb="0"]')) continue;
-      if (m.tagName === 'IMG' && m.parentElement?.tagName === 'PICTURE') continue;
       // Logos, icons and QR codes are drawn as svg; cookie and sign-in
       // prompts come in frames. Neither is the game.
       if (m.tagName.toLowerCase() === 'svg') continue;
       if (m.tagName === 'IFRAME' && !VIDEO_FRAME.test(m.src)) continue;
       const r = m.getBoundingClientRect();
-      if (r.width < 96 || r.height < 64) continue; // icons and avatars
+      if (r.width < 96 || r.height < 64) {
+        // Icons and avatars. But a picture that has not loaded or been laid
+        // out yet has no size either: it is looked at again when it loads
+        // (see onLoad), and three more times while it has no size at all.
+        const tries = looked.get(m) || 0;
+        if (!r.width && tries < LOOK_AGAIN_MS.length) {
+          looked.set(m, tries + 1);
+          setTimeout(() => m.isConnected && boxMedia(m), LOOK_AGAIN_MS[tries]);
+        }
+        continue;
+      }
       const box = mediaFrame(m, r);
       const b = box.getBoundingClientRect();
       // Something the size of the window is an overlay or a backdrop.
       if (b.width >= innerWidth * 0.9 && b.height >= innerHeight * 0.9) continue;
       if (box.closest('[aria-modal="true"],[role="dialog"]')) continue;
       if (pinned(box)) continue; // floating prompts and app banners
-      blur(box);
+      blur(box, true);
     }
   }
 
@@ -1324,19 +1377,27 @@
   // The box that holds just this picture (a figure, a link, a wrapper), so the
   // frame can sit around it.
   function mediaFrame(m, r) {
+    // Wrappers with no size of their own (a <picture> or a span the image is
+    // placed over) are stepped through: they cannot carry a frame.
     let el = m;
-    for (let i = 0; i < 4; i++) {
-      const up = el.parentElement;
+    let at = m;
+    for (let i = 0; i < 5; i++) {
+      const up = at.parentElement;
       if (!up || WALL.has(up.tagName) || up.textContent.trim().length > 160) break;
       const b = up.getBoundingClientRect();
       if (b.width * b.height > r.width * r.height * 1.6) break;
-      el = up;
+      at = up;
+      if (b.width && b.height) el = up;
     }
-    // A bare picture can't carry a frame (no ::before on an img), so take a
-    // wrapper that is about as tall as it, even if wider.
+    // A bare picture can't carry a frame (no ::before on an img), so take the
+    // nearest wrapper that has a size and is about as tall as it, even if wider.
     if (el === m && /^(IMG|VIDEO|CANVAS|IFRAME|SVG|EMBED|OBJECT)$/i.test(m.tagName)) {
-      const up = m.parentElement;
-      if (up && !WALL.has(up.tagName) && up.textContent.trim().length <= 160 && up.getBoundingClientRect().height <= r.height * 1.4) return up;
+      let up = m.parentElement;
+      for (let i = 0; up && i < 3 && !WALL.has(up.tagName); i++, up = up.parentElement) {
+        const b = up.getBoundingClientRect();
+        if (!b.width || !b.height) continue;
+        return up.textContent.trim().length <= 160 && b.height <= r.height * 1.4 ? up : el;
+      }
     }
     return el;
   }
