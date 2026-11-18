@@ -62,7 +62,11 @@
   const ATTRS = ['alt', 'title', 'aria-label', 'href'];
   const ATTR_SEL = '[alt],[title],[aria-label],a[href]';
   const SKIP_TAG = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'HEAD', 'TITLE', 'META', 'LINK']);
-  const SKIP_SEL = 'script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask';
+  // An "are you a robot" check. Nothing in one is about the game, even when
+  // its links carry the words that were searched for, and a hidden puzzle
+  // tile cannot be solved.
+  const ROBOT_CHECK = '[id*="captcha" i],[class*="captcha" i],[data-testid*="captcha" i],[id^="anomaly-modal"],[data-testid^="anomaly-modal"]';
+  const SKIP_SEL = `script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask,${ROBOT_CHECK}`;
   const INLINE = new Set(['A', 'SPAN', 'B', 'I', 'EM', 'STRONG', 'MARK', 'SMALL', 'CODE', 'U', 'S', 'SUP', 'SUB', 'FONT', 'LABEL', 'TIME', 'ABBR', 'CITE', 'Q', 'BDI', 'BDO', 'YT-FORMATTED-STRING', 'YT-ATTRIBUTED-STRING']);
   const WALL = new Set(['BODY', 'HTML', 'MAIN', 'NAV', 'HEADER', 'FOOTER', 'FORM', 'ASIDE']);
   const CARD_TAG = new Set(['ARTICLE', 'LI', 'TR', 'FIGURE', 'BLOCKQUOTE', 'DD', 'P']);
@@ -504,7 +508,15 @@
       if (c.tagName === 'svg') {
         // An icon that is not a button by name (the arrow on a question):
         // what counts is the small round or square thing it sits in.
-        if (!smallIcon(c) || c.closest(CONTROL)?.closest('[data-gsb]') === card) continue;
+        if (!smallIcon(c)) continue;
+        // Inside a small button it is that button, which is in the list already.
+        // A button as wide as the card (a whole question row) is not in the
+        // way; the icon at its end is.
+        const ctl = c.closest(CONTROL);
+        if (ctl && ctl !== card && card.contains(ctl)) {
+          const b = ctl.getBoundingClientRect();
+          if (b.width <= box.width * 0.6 && b.height <= 72) continue;
+        }
         for (let up = c.parentElement; up && up !== card; up = up.parentElement) {
           const b = up.getBoundingClientRect();
           if (b.width > 56 || b.height > 56) break;
@@ -1321,6 +1333,10 @@
 
   // On a page shown anyway, a picture that arrives later (a feed loading more
   // as you scroll) has no size when it is added, so it is boxed when it loads.
+  // Windows over the page, and "are you a robot" checks: their pictures are
+  // not the page's, and a boxed puzzle tile cannot be solved.
+  // (Not the word "challenge": TikTok calls its tag pages that.)
+  const NOT_THE_PAGE = `[aria-modal="true"],[role="dialog"],dialog[open],${ROBOT_CHECK}`;
   const looked = new WeakMap(); // picture -> how often it was looked at again
   const LOOK_AGAIN_MS = [50, 500, 2000];
   function onLoad(e) {
@@ -1355,7 +1371,7 @@
       const b = box.getBoundingClientRect();
       // Something the size of the window is an overlay or a backdrop.
       if (b.width >= innerWidth * 0.9 && b.height >= innerHeight * 0.9) continue;
-      if (box.closest('[aria-modal="true"],[role="dialog"]')) continue;
+      if (box.closest(NOT_THE_PAGE)) continue;
       if (pinned(box)) continue; // floating prompts and app banners
       blur(box, true);
     }

@@ -68,18 +68,20 @@
     },
     {
       hosts: ['reddit.com'],
-      // A post blurs as its title, its text and its picture. The line above
+      // A post blurs as its title, its flair, its text and its picture. The
+      // flair is words a poster or moderator chose ("Leak"), so it is hidden
+      // with the rest, as one small shape, and is not kept as a name. The line above
       // the title (who posted, when, the three dots) and the share buttons are
       // the site's furniture. The three dots keep working on a hidden post:
       // that menu is where "Hide" and "Report" live.
-      blocks: '[slot="title"], [slot="text-body"], [slot="post-media-container"], [slot="thumbnail"]',
+      blocks: '[slot="title"], [slot="post-flair"], [slot="text-body"], [slot="post-media-container"], [slot="thumbnail"]',
       plain: '[slot="credit-bar"], [slot="share-button"], [slot="repost-button"], [slot="award-button"], [slot="full-post-link"], [slot="ssr-post-content-header"], faceplate-screen-reader-content, faceplate-loader',
       live: '[slot="credit-bar"] shreddit-post-overflow-menu, [slot="credit-bar"] > span:last-child > span:last-child',
       // The author and the subreddit stay readable. A post's title is a link
       // into the subreddit too ("/r/name/comments/..."), and is not one of them:
       // counted as the subreddit's name, a short title was left clear.
-      keep: 'a[href^="/user/"], a[href^="/r/"]:not([href*="/comments/"], [slot="title"], [slot="full-post-link"])',
-      by: 'a[href^="/r/"]:not([href*="/comments/"], [slot="title"], [slot="full-post-link"]), a[href^="/user/"]',
+      keep: 'a[href^="/user/"], a[href^="/r/"]:not([href*="/comments/"], [href*="?f="], [slot="title"], [slot="full-post-link"])',
+      by: 'a[href^="/r/"]:not([href*="/comments/"], [href*="?f="], [slot="title"], [slot="full-post-link"]), a[href^="/user/"]',
       byAttr: ['subreddit-prefixed-name', 'author'],
       cards: [
         'shreddit-post', 'shreddit-comment', 'shreddit-profile-comment',
@@ -146,6 +148,8 @@
       // The channel's picture, the LIVE mark and the viewer count are the
       // site's furniture and stay as they are.
       plain: '.tw-avatar, [class*="ScAvatar"], [class*="ScChannelStatusTextIndicator"], [class*="ScMediaCardStatWrapper"], .tw-media-card-stat',
+      // The row of tags under a stream's title blurs as one shape, not a pill each.
+      blocks: 'div:has(> div > .tw-tag)',
       keep: '[data-a-target="preview-card-channel-link"], .chat-author__display-name, [data-test-selector="ChannelLink"]',
       by: '[data-a-target="preview-card-channel-link"], .chat-author__display-name, [data-test-selector="ChannelLink"]',
       cards: [
