@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "No Wanted: GTA 6 Spoiler Blocker",
   "short_name": "No Wanted",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "homepage_url": "https://nowanted.online/",
   "description": "Blurs GTA 6 videos, Shorts, posts, search results and articles on every site until you choose to look.",
   "icons": {
@@ -50,6 +50,18 @@
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/hold.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
     }
   ],
   "web_accessible_resources": [

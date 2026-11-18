@@ -7,6 +7,13 @@
       hosts: ['youtube.com', 'youtube-nocookie.com', 'youtu.be'],
       keep: 'ytd-channel-name, #channel-name, a[href^="/@"], a[href^="/channel/"], #author-text, .ytp-ce-channel-title',
       by: 'ytd-channel-name #text, ytd-channel-name a, a[href^="/@"], a[href^="/channel/"], #author-text, .ytp-ce-channel-title',
+      // The thumbnail, the title and the line under it each blur as one shape.
+      // The channel's picture and the three-dot menu stay, and the menu works
+      // (that is where "Don't recommend channel" lives). The empty layers
+      // YouTube puts on every button for its press effect are left alone.
+      blocks: 'yt-thumbnail-view-model, ytd-thumbnail, a#thumbnail, h3, #video-title, .ytContentMetadataViewModelHost, #metadata-line, .metadata-snippet-container, #description-text',
+      plain: 'yt-interaction, [class*="TouchFeedbackShape"], [class*="ShapeStaticWash"], .ytLockupMetadataViewModelMenuButton, ytd-menu-renderer, .ytLockupMetadataViewModelAvatar, yt-decorated-avatar-view-model, #avatar-link, #channel-thumbnail, #avatar-section, #author-thumbnail, #subscribe-button, ytd-subscribe-button-renderer, yt-subscribe-button-view-model',
+      live: '.ytLockupMetadataViewModelMenuButton, ytd-menu-renderer',
       cards: [
         'ytd-rich-item-renderer', 'ytd-video-renderer', 'ytd-compact-video-renderer',
         'ytd-grid-video-renderer', 'ytd-playlist-video-renderer', 'ytd-playlist-panel-video-renderer',
@@ -33,6 +40,12 @@
       hosts: ['x.com', 'twitter.com'],
       keep: '[data-testid="User-Name"], [data-testid="UserName"], .x-middot-group > :first-child, [data-testid="UserCell"] a[role="link"]:not([href*="/status/"])',
       by: '[data-testid="User-Name"] span, [data-testid="UserCell"] span',
+      // A post blurs as two clean shapes, its text and its media. The avatar,
+      // the row of buttons and the menu stay as they are, and the menu works.
+      blocks: '[data-testid="tweetText"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="card.wrapper"], [data-testid="article-cover-image"]',
+      plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"]))',
+      live: '[data-testid="caret"]',
+      tag: [12, 80], // the label sits left of the post's own buttons: 12px down, 80px in from the right
       cards: [
         'article[data-testid="tweet"]', 'article[role="article"]', 'article', '[data-testid="trend"]',
         '[data-testid="UserCell"]', '[data-testid="typeaheadResult"]', '[data-testid="conversation"]',
@@ -160,7 +173,7 @@
   }
 
   // extra: per-site fixes from the daily rules file, { host: { cards, signals,
-  // keep, by, comments } }. Cards and signals are added to what is built in;
+  // keep, by, comments, blocks, plain, live } }. Cards and signals are added to what is built in;
   // the rest replace it. It is data only: selectors and nothing else.
   function adapterFor(hostname, extra) {
     const host = String(hostname || '').toLowerCase();
@@ -173,14 +186,15 @@
     }
     const cards = found ? [...found.cards] : [];
     const signals = found?.signals ? [...found.signals] : [];
-    const out = { by: found?.by || null, comments: found?.comments || null, keep: found?.keep || null, byAttr: found?.byAttr || null };
+    const out = { by: found?.by || null, comments: found?.comments || null, keep: found?.keep || null, byAttr: found?.byAttr || null,
+      blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null };
     let fixed = false;
     for (const [h, fix] of Object.entries(extra || {})) {
       if (!fix || typeof fix !== 'object' || !onHost(host, String(h).toLowerCase())) continue;
       fixed = true;
       for (const sel of Array.isArray(fix.cards) ? fix.cards : []) if (usable(sel)) cards.push(sel);
       for (const sel of Array.isArray(fix.signals) ? fix.signals : []) if (usable(sel)) signals.push(sel);
-      for (const key of ['keep', 'by', 'comments']) if (usable(fix[key])) out[key] = fix[key];
+      for (const key of ['keep', 'by', 'comments', 'blocks', 'plain', 'live']) if (usable(fix[key])) out[key] = fix[key];
     }
     if (!found && !(fixed && cards.length)) return null;
     return { cards: cards.join(','), signals: signals.length ? signals.join(',') : null, ...out };

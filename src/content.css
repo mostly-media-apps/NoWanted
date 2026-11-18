@@ -57,7 +57,16 @@
 
 [data-gsb="1"]:not([data-gsb-ok]), [data-gsb="2"]:not([data-gsb-ok]), [data-gsb="3"]:not([data-gsb-ok]) { cursor: pointer !important; }
 :root[data-gsb-locked] [data-gsb="1"], :root[data-gsb-locked] [data-gsb="2"], :root[data-gsb-locked] [data-gsb="3"] { cursor: default !important; }
-[data-gsb="1"]:not([data-gsb-ok]) *, [data-gsb="2"]:not([data-gsb-ok]) *, [data-gsb="3"]:not([data-gsb-ok]) * { pointer-events: none !important; }
+/* Nothing inside a hidden post takes a click, except the site's own menu
+   button (data-gsb-live). That button and what is inside it are left exactly
+   as the site styled them: forcing them on would also switch on the invisible
+   layers sites lay over a button, which then swallow the click. */
+[data-gsb="1"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
+[data-gsb="2"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
+[data-gsb="3"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *) { pointer-events: none !important; }
+/* The button itself is switched back on (it would inherit "none" from its
+   parent). What is inside it then follows the site's own rules. */
+[data-gsb="1"]:not([data-gsb-ok]) [data-gsb-live], [data-gsb="2"]:not([data-gsb-ok]) [data-gsb-live], [data-gsb="3"]:not([data-gsb-ok]) [data-gsb-live] { pointer-events: auto !important; }
 
 [data-gsb="1"] { isolation: isolate !important; }
 [data-gsb="1"][data-gsb-rel] { position: relative !important; }
@@ -97,7 +106,7 @@
 /* The tag in the corner, with the channel when it could not be kept in place. */
 [data-gsb="1"]::after {
   content: var(--gsb-tag, "Spoilers") !important;
-  inset: auto !important; top: 8px !important; right: 8px !important;
+  inset: auto !important; top: var(--gsb-tag-y, 8px) !important; right: var(--gsb-tag-x, 8px) !important;
   display: block !important; width: auto !important; max-width: calc(100% - 16px) !important; height: 20px !important;
   padding: 0 8px !important; border: 0 !important; border-radius: 6px !important; clip-path: none !important;
   background: rgba(22, 12, 28, 0.88) !important; color: #ffffff !important;

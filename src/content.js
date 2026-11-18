@@ -272,11 +272,24 @@
     // parent that clips (a shelf, a carousel), would have that frame cut off,
     // so there it stays on the card's inside edge and takes the card's corners.
     if (clipsPaint(cs) || nearClippingEdge(el, box)) {
-      el.style.setProperty('--gsb-o', '0px');
-      el.style.setProperty('--gsb-r', cs.borderRadius || '0px');
+      const square = !(parseFloat(cs.borderTopLeftRadius) > 0);
+      if (square && box.width >= 240 && box.height >= 96) {
+        // A square card that clips (a post in a feed that runs edge to edge):
+        // the frame sits 4px inside with round corners. Drawn on the very edge,
+        // the frames of two posts in a row touch and read as one thick line.
+        el.style.setProperty('--gsb-o', '-4px');
+        el.style.setProperty('--gsb-r', '12px');
+      } else {
+        el.style.setProperty('--gsb-o', '0px');
+        el.style.setProperty('--gsb-r', cs.borderRadius || '0px');
+      }
     } else {
       const r = parseFloat(cs.borderTopLeftRadius) || 0;
       el.style.setProperty('--gsb-r', Math.max(16, r + 4) + 'px');
+    }
+    if (adapter?.tag) {
+      el.style.setProperty('--gsb-tag-y', adapter.tag[0] + 'px');
+      el.style.setProperty('--gsb-tag-x', adapter.tag[1] + 'px');
     }
     if (!markKeep(el) && (!box.height || box.height >= 72)) {
       const by = bylineOf(el);
@@ -360,20 +373,30 @@
     const mode = modeFor(el);
     el.setAttribute('data-gsb', mode);
     if (mode !== '3') markParts(el);
+    markLive(el);
     blurred.add(el);
     tally(el, kindOf(el, mode));
     gateAll(el);
     report();
   }
 
+  // The site's own menu on a hidden post (the three dots) keeps working, so
+  // the post can be reported or its account muted without showing it.
+  function markLive(card) {
+    if (!adapter?.live) return;
+    for (const el of card.querySelectorAll(adapter.live)) {
+      if (!el.hasAttribute('data-gsb-live')) el.setAttribute('data-gsb-live', '');
+    }
+  }
+
   function strip(el) {
-    for (const p of el.querySelectorAll('[data-gsb-part],[data-gsb-keep]')) {
+    for (const p of el.querySelectorAll('[data-gsb-part],[data-gsb-keep],[data-gsb-live]')) {
       p.removeAttribute('data-gsb-part');
       p.removeAttribute('data-gsb-keep');
+      p.removeAttribute('data-gsb-live');
     }
     for (const name of ['data-gsb-rel', 'data-gsb-by', 'data-gsb-ask', 'data-gsb-sm', 'data-gsb-ok', 'data-gsb-over']) el.removeAttribute(name);
-    el.style.removeProperty('--gsb-r');
-    el.style.removeProperty('--gsb-o');
+    for (const name of ['--gsb-r', '--gsb-o', '--gsb-tag-y', '--gsb-tag-x']) el.style.removeProperty(name);
     if (asking === el) hideBubble();
   }
 
@@ -408,8 +431,23 @@
   function markParts(card) {
     const keeps = [...card.querySelectorAll('[data-gsb-keep]')];
     const kinds = new Map(); // element -> "t" or "m"
+    const within = (el, sel) => {
+      const up = sel ? el.closest(sel) : null;
+      return up && up !== card && card.contains(up) ? up : null;
+    };
     const add = (el, kind) => {
       if (el === card || keeps.some((k) => k.contains(el))) return;
+      // One block of the post (its text, its picture, its video) is one piece,
+      // so it blurs as one clean shape instead of a pile of small ones.
+      const block = within(el, adapter?.blocks);
+      if (block && !keeps.some((k) => block.contains(k))) {
+        const text = kind === 't' && !block.querySelector(PART_MEDIA);
+        if (!kinds.has(block) || text) kinds.set(block, text ? 't' : kinds.get(block) || 'm');
+        return;
+      }
+      // The site's own furniture (the avatar, the row of buttons, the menu)
+      // says nothing about the game and stays as it is.
+      if (within(el, adapter?.plain)) return;
       if (keeps.some((k) => el.contains(k))) {
         // Split around the channel: take the other branches instead.
         for (const c of el.children) if (!SKIP_TAG.has(c.tagName)) add(c, kind === 't' && !c.textContent.trim() ? 'm' : kind);
@@ -635,7 +673,10 @@
       return;
     }
     if (collect(el, []).length === 0) clear(el);
-    else if (el.getAttribute('data-gsb') !== '3') markParts(el);
+    else {
+      if (el.getAttribute('data-gsb') !== '3') markParts(el);
+      markLive(el);
+    }
   }
 
   // ---------- video and audio ----------
@@ -655,18 +696,40 @@
     return false;
   }
 
+  // The mark hold.js reads in the page's own world: while it is on a video,
+  // the site cannot start it or turn its sound on.
+  const HOLD = 'data-gsb-hold';
+  // Where hold.js is not running (an older Safari), a site can still start the
+  // video again each time it is paused. After a few rounds the pausing stops
+  // and the video is only kept silent, so the page never gets stuck in a loop.
+  const FIGHT_ROUNDS = 6;
+  const FIGHT_MS = 1000;
+  const fights = new WeakMap(); // media element -> { n, since }
+  function losingFight(m) {
+    const now = performance.now();
+    const f = fights.get(m);
+    if (!f || now - f.since > FIGHT_MS) {
+      fights.set(m, { n: 1, since: now });
+      return false;
+    }
+    return ++f.n > FIGHT_ROUNDS;
+  }
+
   function gate(m) {
     if (active && S.muteMedia && isHidden(m)) {
       if (!gated.has(m)) gated.set(m, m.muted);
+      if (!m.hasAttribute(HOLD)) m.setAttribute(HOLD, '');
       if (!m.muted) m.muted = true;
-      if (!m.paused) m.pause();
+      if (!m.paused && !losingFight(m)) m.pause();
     } else release(m);
   }
 
   function release(m) {
+    if (m.hasAttribute(HOLD)) m.removeAttribute(HOLD);
     if (!gated.has(m)) return;
     m.muted = gated.get(m);
     gated.delete(m);
+    fights.delete(m);
   }
 
   const gateAll = (scope) => scope.querySelectorAll('video,audio').forEach(gate);
@@ -687,10 +750,20 @@
   function hiddenInPath(e) {
     for (const n of e.composedPath()) {
       if (n.nodeType !== 1) continue;
+      if (n.hasAttribute('data-gsb-live')) return null; // the site's own menu button
       const s = n.getAttribute('data-gsb');
       if (isHiddenState(s) && !n.hasAttribute('data-gsb-ok')) return n;
     }
     return null;
+  }
+
+  function liveInPath(e) {
+    for (const n of e.composedPath()) {
+      if (n.nodeType !== 1) continue;
+      if (n.hasAttribute('data-gsb-live')) return true;
+      if (isHiddenState(n.getAttribute('data-gsb'))) return false;
+    }
+    return false;
   }
 
   function cardInPath(e) {
@@ -707,10 +780,39 @@
       if (!path.includes(bubble.host) && !path.includes(asking)) stopAsking(asking);
     }
     const el = hiddenInPath(e);
-    if (!el) return;
+    if (!el) {
+      if (e.type === 'click') noteAllowedClick(e);
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
     if (e.type === 'click' && S.reveal === 'click') press(el, e);
+  }
+
+  // A click on a post the person already said yes to may open that post's own
+  // page. That page is then not covered: they were asked once already.
+  const ALLOWED_GO_MS = 4000;
+  let allowedGo = null; // { at, pages }
+  const pageKey = (href) => {
+    try {
+      const u = new URL(href, location.href);
+      return u.origin + u.pathname + u.search;
+    } catch {
+      return '';
+    }
+  };
+  function noteAllowedClick(e) {
+    const card = cardInPath(e);
+    if (!card?.hasAttribute('data-gsb-ok')) return;
+    const pages = new Set();
+    if (card.href) pages.add(pageKey(card.href));
+    for (const a of card.querySelectorAll('a[href]')) pages.add(pageKey(a.href));
+    const up = card.closest('a[href]');
+    if (up) pages.add(pageKey(up.href));
+    allowedGo = { at: Date.now(), pages };
+  }
+  function cameFromAllowed() {
+    return !!allowedGo && Date.now() - allowedGo.at < ALLOWED_GO_MS && allowedGo.pages.has(pageKey(location.href));
   }
 
   let lastAllowed = null;
@@ -719,9 +821,10 @@
     if (el) {
       e.stopImmediatePropagation();
       if (el.hasAttribute('data-gsb-ask')) el.toggleAttribute('data-gsb-over', overButton(el, e));
-    } else if (cardInPath(e)) {
+    } else if (cardInPath(e) && !liveInPath(e)) {
       // An allowed card still hides the site's hover previews (YouTube plays
       // the whole video in an overlay outside the card). CSS :hover still works.
+      // The site's own menu button gets its hover, or it would not work.
       e.stopImmediatePropagation();
     }
     if (e.type !== 'mouseover' && e.type !== 'pointerover') return;
@@ -1089,8 +1192,8 @@
 
   function onUrlChange() {
     lastUrl = location.href;
-    pageShown = false;
-    pageAbout = false;
+    pageShown = cameFromAllowed();
+    pageAbout = pageShown;
     build();
     checkPage();
     if (active) scan(root);
