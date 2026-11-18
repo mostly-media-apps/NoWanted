@@ -1,3 +1,5 @@
+No Wanted is a free Chrome extension that blurs GTA 6 spoilers on YouTube, X, Reddit and the rest of the web. [https://nowanted.online/](https://nowanted.online/)
+
 <p align="center">
   <img src="docs/hero.jpg" alt="Spoilers: No Wanted. Play it before you see it, over a sunset on the Vice City coast" width="100%">
 </p>
