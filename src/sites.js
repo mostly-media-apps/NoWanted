@@ -57,14 +57,34 @@
       // nothing about the game, and blurred it became a bright smear.
       plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"])), [class*="tw-flex"][class*="tw-justify-end"]',
       live: '[data-testid="caret"]',
-      tag: [12, 80], // the label sits left of the post's own buttons: 12px down, 80px in from the right
+      // The label sits left of a post's own buttons: 12px down, 80px in from the
+      // right. A message bubble has no buttons, so there it takes the usual corner.
+      tag: [12, 80, ':not([data-testid="dm-message-list"] *)'],
       // A promoted post is an ordinary article here, and a promoted trend an
       // ordinary trend, so both are covered by the same cards.
       cards: [
         'article[data-testid="tweet"]', 'article[role="article"]', 'article', '[data-testid="trend"]',
-        '[data-testid="UserCell"]', '[data-testid="typeaheadResult"]', '[data-testid="conversation"]',
+        '[data-testid="UserCell"]', '[data-testid="typeaheadResult"]',
         '[data-testid="eventHero"]', 'a[href^="/i/trending/"]', 'a[href^="/i/events/"]',
+        // In an open conversation, one bubble: the words of a message
+        // (role="article") or what it carries, a shared post or a file
+        // (role="group"). Never the message row, which is as wide as the page.
+        '[data-testid="dm-message-list"] [data-testid^="message-"] :is([role="article"], [role="group"])',
       ],
+      // A bubble is hidden whole. X's class names for it contain "chat", which
+      // the general rules read as "a chat of several messages, hide one line".
+      whole: '[data-testid="dm-message-list"] [data-testid^="message-"] :is([role="article"], [role="group"])',
+      // Messages are not posts. In the list of conversations only the line with
+      // the last message is hidden: the picture, the name and the time say who
+      // wrote, and the row still opens the conversation. ("conversation" is the
+      // row of the older Messages page.)
+      rows: {
+        in: '[data-testid^="dm-conversation-item-"], [data-testid^="dm-grok-bot-item-"], [data-testid="conversation"]',
+        only: 'a > div > div:last-child > div:last-child > div:first-child',
+      },
+      // The name of the person you are talking to, the headers and the box you
+      // write in are never hidden, whatever they say.
+      leave: '[data-testid="dm-inbox-header"], [data-testid="dm-conversation-header"], [data-testid="dm-conversation-header-item"], [data-testid="dm-composer-container"]',
     },
     {
       hosts: ['reddit.com'],
@@ -206,8 +226,8 @@
   }
 
   // extra: per-site fixes from the daily rules file, { host: { cards, signals,
-  // keep, by, comments, blocks, plain, live } }. Cards and signals are added to what is built in;
-  // the rest replace it. It is data only: selectors and nothing else.
+  // keep, by, comments, blocks, plain, live, leave, whole, rows: { in, only } } }. Cards and signals are
+  // added to what is built in; the rest replace it. It is data only: selectors and nothing else.
   function adapterFor(hostname, extra) {
     const host = String(hostname || '').toLowerCase();
     let found = null;
@@ -220,14 +240,16 @@
     const cards = found ? [...found.cards] : [];
     const signals = found?.signals ? [...found.signals] : [];
     const out = { by: found?.by || null, comments: found?.comments || null, keep: found?.keep || null, byAttr: found?.byAttr || null,
-      blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null };
+      blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null,
+      leave: found?.leave || null, whole: found?.whole || null, rows: found?.rows || null };
     let fixed = false;
     for (const [h, fix] of Object.entries(extra || {})) {
       if (!fix || typeof fix !== 'object' || !onHost(host, String(h).toLowerCase())) continue;
       fixed = true;
       for (const sel of Array.isArray(fix.cards) ? fix.cards : []) if (usable(sel)) cards.push(sel);
       for (const sel of Array.isArray(fix.signals) ? fix.signals : []) if (usable(sel)) signals.push(sel);
-      for (const key of ['keep', 'by', 'comments', 'blocks', 'plain', 'live']) if (usable(fix[key])) out[key] = fix[key];
+      for (const key of ['keep', 'by', 'comments', 'blocks', 'plain', 'live', 'leave', 'whole']) if (usable(fix[key])) out[key] = fix[key];
+      if (usable(fix.rows?.in) && usable(fix.rows?.only)) out.rows = { in: fix.rows.in, only: fix.rows.only };
     }
     if (!found && !(fixed && cards.length)) return null;
     return { cards: cards.join(','), signals: signals.length ? signals.join(',') : null, ...out };

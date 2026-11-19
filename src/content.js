@@ -10,7 +10,7 @@
   const api = globalThis.browser ?? globalThis.chrome;
   const site = G.siteOf(location.hostname);
   // No Wanted's own site talks about the game on every line and spoils nothing.
-  const OWN_SITES = ['nowanted.online', 'offtheradar.app', 'offtheradar.live'];
+  const OWN_SITES = ['nowanted.online'];
   let adapter = G.adapterFor(location.hostname);
   // The daily rules file, as the background saved it: extra words, always-blur
   // sources, per-site selectors and sites to stay off. Data only.
@@ -149,16 +149,35 @@
   // ---------- shadow DOM ----------
 
   const watchedRoots = new WeakSet();
+  // Our styles do not reach into a shadow root, so each one gets its own copy.
+  // A site that fills its root in one go (innerHTML) throws that copy away
+  // with everything else, so it is put back whenever it is missing.
+  function styleShadow(shadow) {
+    for (const c of shadow.children) if (c.tagName === 'STYLE' && c.hasAttribute('data-gsb-style')) return;
+    const style = document.createElement('style');
+    style.setAttribute('data-gsb-style', '');
+    style.textContent = G.CSS;
+    shadow.appendChild(style);
+  }
+
   function scanShadow(shadow, out) {
     if (!watchedRoots.has(shadow)) {
       watchedRoots.add(shadow);
       observer.observe(shadow, OBSERVE);
       listenMedia(shadow);
-      const style = document.createElement('style');
-      style.textContent = G.CSS;
-      shadow.appendChild(style);
     }
+    styleShadow(shadow);
     for (const c of shadow.children) collect(c, out);
+  }
+
+  // A shadow root the site attached after its element was already on the page
+  // (hold.js sends the event; nothing else shows that it happened).
+  function onShadow(e) {
+    const host = e.composedPath()[0];
+    if (!active || !host?.shadowRoot || watchedRoots.has(host.shadowRoot)) return;
+    const found = [];
+    scanShadow(host.shadowRoot, found);
+    for (const m of found) flag(m);
   }
 
   function findShadows(node, out) {
@@ -219,6 +238,7 @@
     if (adapter) {
       const card = closestAcross(match, adapter.cards);
       if (card) {
+        if (adapter.whole && card.matches(adapter.whole)) return card; // never split further
         const zone = match.closest(adapter.comments ? `${adapter.comments},${COMMENT_ZONE}` : COMMENT_ZONE);
         if (zone && zone !== card && card.contains(zone)) {
           const comment = pickGeneric(match, zone);
@@ -267,6 +287,10 @@
   const HIDDEN = '[data-gsb="1"],[data-gsb="2"],[data-gsb="3"]';
   const isHiddenState = (v) => v === '1' || v === '2' || v === '3';
 
+  // A site can give the label a fixed spot (adapter.tag: down, in from the
+  // right, and optionally which cards it holds for).
+  const fixedTag = (el) => !!adapter?.tag && (!adapter.tag[2] || el.matches(adapter.tag[2]));
+
   // "1" a framed box with a label, "2" no box of its own, "3" small or bare text.
   function modeFor(el) {
     if (!el.isConnected) return '1';
@@ -293,7 +317,7 @@
     el.style.setProperty('--gsb-in', inset);
     el.style.setProperty('--gsb-r', radius);
     for (const n of around) reframe(n);
-    if (adapter?.tag) {
+    if (fixedTag(el)) {
       el.style.setProperty('--gsb-tag-y', adapter.tag[0] + 'px');
       el.style.setProperty('--gsb-tag-x', adapter.tag[1] + 'px');
     }
@@ -492,7 +516,7 @@
   const TAG_CLEAR = 4;
   const CONTROL = 'button,[role="button"],summary,[data-gsb-live],[data-gsb-keep]';
   function placeTag(card) {
-    if (adapter?.tag || !card.isConnected || card.getAttribute('data-gsb') !== '1' || card.hasAttribute('data-gsb-ask')) return;
+    if (fixedTag(card) || !card.isConnected || card.getAttribute('data-gsb') !== '1' || card.hasAttribute('data-gsb-ask')) return;
     const box = card.getBoundingClientRect();
     if (!box.width || !box.height) return;
     const cs = getComputedStyle(card);
@@ -695,7 +719,7 @@
       p.removeAttribute('data-gsb-keep');
       p.removeAttribute('data-gsb-live');
     }
-    for (const name of ['data-gsb-rel', 'data-gsb-by', 'data-gsb-ask', 'data-gsb-sm', 'data-gsb-b', 'data-gsb-ok', 'data-gsb-over']) el.removeAttribute(name);
+    for (const name of ['data-gsb-rel', 'data-gsb-by', 'data-gsb-ask', 'data-gsb-sm', 'data-gsb-b', 'data-gsb-ok', 'data-gsb-over', 'data-gsb-thru']) el.removeAttribute(name);
     for (const name of ['--gsb-r', '--gsb-in', '--gsb-tag-y', '--gsb-tag-x']) el.style.removeProperty(name);
     if (asking === el) hideBubble();
   }
@@ -994,8 +1018,31 @@
     report();
   }
 
+  // A row in a list (a conversation in the list of messages): only its
+  // lines named in the site's rules are hidden, each one that names the game.
+  // With a layout the rules do not know, it is the matched line itself, unless
+  // that is the row's name.
+  function rowLines(row, match) {
+    const known = row.querySelectorAll(adapter.rows.only);
+    if (known.length) return [...known].filter((el) => collect(el, []).length > 0);
+    let line = match;
+    while (INLINE.has(line.tagName) && line.parentElement && line.parentElement !== row) line = line.parentElement;
+    return line === row || line.contains(row) || (adapter.keep && line.closest(adapter.keep)) ? [] : [line];
+  }
+
   function flag(match) {
     if (match.closest(SKIP_SEL)) return;
+    if (adapter?.leave && closestAcross(match, adapter.leave)) return;
+    const row = adapter?.rows && closestAcross(match, adapter.rows.in);
+    if (row) {
+      for (const line of rowLines(row, match)) {
+        blur(line);
+        // The row is how you open the conversation, so a click on its hidden
+        // line goes through to it; the message asks once it is open.
+        if (isHiddenState(stateOf(line))) line.setAttribute('data-gsb-thru', '');
+      }
+      return;
+    }
     if (adapter?.signals && match.closest(adapter.signals)) queuePageCheck();
     else if (match.closest('h1')) queuePageCheck();
     const target = pickTarget(match);
@@ -1112,12 +1159,15 @@
 
   // ---------- clicks on hidden items ----------
 
+  // A hidden item that takes the click for itself. A hidden line of a row
+  // does not: the click belongs to the row.
+  const takesClicks = (n) => isHiddenState(n.getAttribute('data-gsb')) && !n.hasAttribute('data-gsb-thru');
+
   function hiddenInPath(e) {
     for (const n of e.composedPath()) {
       if (n.nodeType !== 1) continue;
       if (n.hasAttribute('data-gsb-live')) return null; // the site's own menu button
-      const s = n.getAttribute('data-gsb');
-      if (isHiddenState(s) && !n.hasAttribute('data-gsb-ok')) return n;
+      if (takesClicks(n) && !n.hasAttribute('data-gsb-ok')) return n;
     }
     return null;
   }
@@ -1126,14 +1176,14 @@
     for (const n of e.composedPath()) {
       if (n.nodeType !== 1) continue;
       if (n.hasAttribute('data-gsb-live')) return true;
-      if (isHiddenState(n.getAttribute('data-gsb'))) return false;
+      if (takesClicks(n)) return false;
     }
     return false;
   }
 
   function cardInPath(e) {
     for (const n of e.composedPath()) {
-      if (n.nodeType === 1 && isHiddenState(n.getAttribute('data-gsb'))) return n;
+      if (n.nodeType === 1 && takesClicks(n)) return n;
     }
     return null;
   }
@@ -1550,6 +1600,7 @@
       if (!el) {
         // a shadow root or the document itself
         if (r.type === 'childList') for (const n of r.addedNodes) if (n.nodeType === 1) fresh.add(n);
+        if (watchedRoots.has(t)) styleShadow(t);
         continue;
       }
       if (el.tagName === 'TITLE' || (el.tagName === 'HEAD' && r.type === 'childList')) {
@@ -1700,6 +1751,7 @@
       window.addEventListener(type, onHover, { capture: true, passive: true });
     }
     window.addEventListener('keydown', onKey, true);
+    window.addEventListener('gsb-shadow', onShadow, true);
     for (const type of ['popstate', 'hashchange', 'yt-navigate-finish', 'pageshow']) {
       window.addEventListener(type, () => location.href !== lastUrl && onUrlChange(), true);
     }

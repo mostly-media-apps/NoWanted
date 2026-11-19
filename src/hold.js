@@ -11,7 +11,29 @@
 // the blur and its sound could come through in bursts. Here the site's own
 // play() is refused, the same way a browser refuses autoplay, which every
 // player already handles. Nothing is read, stored or sent.
+//
+// One more thing is done here, for the same reason (only the page's own world
+// can see it): when the site gives an element a shadow root, content.js is
+// told with an event, "gsb-shadow". A site may build a whole part of its page
+// in a shadow root long after the page has loaded (X's Chat does), and from
+// outside nothing shows that it happened, so that part stayed unread.
 (() => {
+  const attach = globalThis.Element?.prototype.attachShadow;
+  if (attach) {
+    // Written as a method so the replacement is still named "attachShadow".
+    Element.prototype.attachShadow = {
+      attachShadow() {
+        const root = attach.apply(this, arguments);
+        try {
+          this.dispatchEvent(new Event('gsb-shadow', { bubbles: true, composed: true }));
+        } catch {
+          // the site's call is never held up by this
+        }
+        return root;
+      },
+    }.attachShadow;
+  }
+
   const HOLD = 'data-gsb-hold';
   // On <html> while No Wanted is on and set to stop media in hidden items.
   const QUIET = 'data-gsb-quiet';
