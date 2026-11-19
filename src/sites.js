@@ -74,14 +74,30 @@
       // A bubble is hidden whole. X's class names for it contain "chat", which
       // the general rules read as "a chat of several messages, hide one line".
       whole: '[data-testid="dm-message-list"] [data-testid^="message-"] :is([role="article"], [role="group"])',
-      // Messages are not posts. In the list of conversations only the line with
-      // the last message is hidden: the picture, the name and the time say who
-      // wrote, and the row still opens the conversation. ("conversation" is the
-      // row of the older Messages page.)
-      rows: {
-        in: '[data-testid^="dm-conversation-item-"], [data-testid^="dm-grok-bot-item-"], [data-testid="conversation"]',
-        only: 'a > div > div:last-child > div:last-child > div:first-child',
-      },
+      // Rows that are not posts: only the named line of a row is hidden (or,
+      // with no line named, the line that matched), never the row.
+      rows: [
+        // In the list of conversations it is the line with the last message:
+        // the picture, the name and the time say who wrote, and the row still
+        // opens the conversation.
+        {
+          in: '[data-testid^="dm-conversation-item-"], [data-testid^="dm-grok-bot-item-"]',
+          only: 'a > div > div:last-child > div:last-child > div:first-child',
+          open: true,
+        },
+        // The row of the older Messages page, whose layout is not known here:
+        // the line that matched.
+        { in: '[data-testid="conversation"]', open: true },
+        // In a notification it is the quoted post: who did what stays clear.
+        { in: 'article[data-testid="notification"]', only: '[data-testid="tweetText"]' },
+      ],
+      // Every post on X is one of the cards above, so anything else that names
+      // the game is not a post (a line of a profile, the name of a List): only
+      // that line is hidden, never the block around it.
+      elsewhere: 'line',
+      // Nothing is hidden in Settings. Its list of muted words is the person's
+      // own, and for our users it names the game on every row.
+      off: ['/settings'],
       // The name of the person you are talking to, the headers and the box you
       // write in are never hidden, whatever they say.
       leave: '[data-testid="dm-inbox-header"], [data-testid="dm-conversation-header"], [data-testid="dm-conversation-header-item"], [data-testid="dm-composer-container"]',
@@ -226,7 +242,7 @@
   }
 
   // extra: per-site fixes from the daily rules file, { host: { cards, signals,
-  // keep, by, comments, blocks, plain, live, leave, whole, rows: { in, only } } }. Cards and signals are
+  // keep, by, comments, blocks, plain, live, leave, whole, rows: [{ in, only, open }], off: [paths] } }. Cards and signals are
   // added to what is built in; the rest replace it. It is data only: selectors and nothing else.
   function adapterFor(hostname, extra) {
     const host = String(hostname || '').toLowerCase();
@@ -241,7 +257,7 @@
     const signals = found?.signals ? [...found.signals] : [];
     const out = { by: found?.by || null, comments: found?.comments || null, keep: found?.keep || null, byAttr: found?.byAttr || null,
       blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null,
-      leave: found?.leave || null, whole: found?.whole || null, rows: found?.rows || null };
+      leave: found?.leave || null, whole: found?.whole || null, rows: found?.rows || null, elsewhere: found?.elsewhere || null, off: found?.off || null };
     let fixed = false;
     for (const [h, fix] of Object.entries(extra || {})) {
       if (!fix || typeof fix !== 'object' || !onHost(host, String(h).toLowerCase())) continue;
@@ -249,7 +265,11 @@
       for (const sel of Array.isArray(fix.cards) ? fix.cards : []) if (usable(sel)) cards.push(sel);
       for (const sel of Array.isArray(fix.signals) ? fix.signals : []) if (usable(sel)) signals.push(sel);
       for (const key of ['keep', 'by', 'comments', 'blocks', 'plain', 'live', 'leave', 'whole']) if (usable(fix[key])) out[key] = fix[key];
-      if (usable(fix.rows?.in) && usable(fix.rows?.only)) out.rows = { in: fix.rows.in, only: fix.rows.only };
+      if (Array.isArray(fix.rows)) {
+        const rows = fix.rows.filter((r) => r && usable(r.in) && (r.only == null || usable(r.only))).map((r) => ({ in: r.in, only: r.only || null, open: r.open === true }));
+        if (rows.length) out.rows = rows;
+      }
+      if (Array.isArray(fix.off)) out.off = fix.off.filter((p) => typeof p === 'string' && p.startsWith('/'));
     }
     if (!found && !(fixed && cards.length)) return null;
     return { cards: cards.join(','), signals: signals.length ? signals.join(',') : null, ...out };

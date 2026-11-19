@@ -122,15 +122,48 @@
     return first(u.pathname) === first(location.pathname) && src.test(location.href);
   }
 
+  // A label on a whole region names the region, not a thing in it: a
+  // timeline called after a List ("Timeline: <name>"), a section, a list. The
+  // posts inside are found by their own words. Without this the whole region
+  // became one hidden box (all of X's home timeline did).
+  const REGION_TAG = new Set(['SECTION', 'MAIN', 'ASIDE', 'NAV', 'UL', 'OL', 'TABLE', 'FORM', 'BODY', 'HEADER', 'FOOTER']);
+  const REGION_ROLE = new Set(['region', 'feed', 'main', 'list', 'group', 'tabpanel', 'navigation', 'complementary', 'banner', 'contentinfo', 'listbox', 'grid', 'table', 'tree', 'tablist', 'toolbar', 'menu', 'menubar', 'search', 'form']);
+  const POST_LIKE = 'article,[role="article"],li,[role="listitem"],[role="comment"]';
+  function isRegion(el) {
+    const role = el.getAttribute('role');
+    if (REGION_TAG.has(el.tagName) || REGION_ROLE.has(role)) return true;
+    // A plain <div> with a label and no role is a container too. X labels its
+    // timeline that way while it is still empty, so what is inside cannot be
+    // what decides.
+    if (el.tagName === 'DIV' && !role) return true;
+    return !el.matches(POST_LIKE) && el.querySelectorAll(POST_LIKE).length >= 2;
+  }
+
+  // On a page that is itself a search for the game, the site's own links
+  // carry that search along: the tabs (Images, Videos), the page numbers, the
+  // filters and the sort order all point at "?q=<the same words>". Such a link
+  // says nothing but what the person typed. It counts only when its words or
+  // its path name the game, not when its query merely repeats the page's.
+  function echoesSearch(href) {
+    if (!location.search) return false;
+    try {
+      const u = new URL(href, location.href);
+      if (u.origin !== location.origin || !u.search) return false;
+      return hit(G.urlText(location.origin + '/' + location.search)) && !hit(G.urlText(u.origin + u.pathname));
+    } catch {
+      return false;
+    }
+  }
+
   function attrHits(el) {
     for (const name of ATTRS) {
       const v = el.getAttribute(name);
       if (!v || v.length < 4) continue;
       if (name === 'href') {
-        if (v[0] === '#' || v.startsWith('javascript:')) continue;
+        if (v[0] === '#' || v.startsWith('javascript:') || echoesSearch(v)) continue;
         if (hit(v) || (/[+%]/.test(v) && hit(G.urlText(v, location.href)))) return true;
         if (src.any && src.test(v, location.href) && !ownLink(v)) return true;
-      } else if (hit(v)) return true;
+      } else if (hit(v) && !((name === 'aria-label' || name === 'title') && isRegion(el))) return true;
     }
     return false;
   }
@@ -246,17 +279,36 @@
         }
         return card;
       }
+      // On a site where every post is a known card, anything else that names
+      // the game is not a post (a line of a profile, a list's name): only
+      // that line is hidden.
+      if (adapter.elsewhere === 'line') {
+        const line = lineOf(match, null);
+        return line && adapter.keep && closestAcross(line, adapter.keep) ? null : line; // a name stays a name
+      }
     }
     return pickGeneric(match, null);
   }
 
+  // The line a match sits in: up through inline wrappers to the first block.
+  function lineOf(match, limit) {
+    let line = match;
+    while (INLINE.has(line.tagName) && line.parentElement && line.parentElement !== limit && !WALL.has(line.parentElement.tagName)) line = line.parentElement;
+    return WALL.has(line.tagName) || line === limit ? null : line;
+  }
+
+  // The page's own header and footer end a climb. A header or footer inside a
+  // post is the post's own (its title, its tags), and the climb goes on to the
+  // post: otherwise only the title was hidden and the text under it stayed.
+  const isWall = (el) => WALL.has(el.tagName) && !((el.tagName === 'HEADER' || el.tagName === 'FOOTER') && !!el.parentElement?.closest(POST_LIKE));
+
   function pickGeneric(match, limit) {
     if (match === limit) return null;
     let block = match;
-    while (INLINE.has(block.tagName) && block.parentElement && block.parentElement !== limit && !WALL.has(block.parentElement.tagName)) {
+    while (INLINE.has(block.tagName) && block.parentElement && block.parentElement !== limit && !isWall(block.parentElement)) {
       block = block.parentElement;
     }
-    if (WALL.has(block.tagName)) return null;
+    if (isWall(block)) return null;
 
     // Climb to the post this belongs to: the outermost short card, stopping at
     // the first one that is an item in a list. A paragraph alone never ends
@@ -264,7 +316,7 @@
     // only the paragraph.
     let best = null;
     let el = block;
-    for (let depth = 0; el && el !== limit && depth < 12 && !WALL.has(el.tagName); depth++, el = el.parentElement) {
+    for (let depth = 0; el && el !== limit && depth < 12 && !isWall(el); depth++, el = el.parentElement) {
       const len = el.textContent.length;
       if (len > 2500) break;
       if (!isCard(el)) continue;
@@ -1020,31 +1072,71 @@
 
   // A row in a list (a conversation in the list of messages): only its
   // lines named in the site's rules are hidden, each one that names the game.
-  // With a layout the rules do not know, it is the matched line itself, unless
-  // that is the row's name.
-  function rowLines(row, match) {
-    const known = row.querySelectorAll(adapter.rows.only);
-    if (known.length) return [...known].filter((el) => collect(el, []).length > 0);
-    let line = match;
-    while (INLINE.has(line.tagName) && line.parentElement && line.parentElement !== row) line = line.parentElement;
-    return line === row || line.contains(row) || (adapter.keep && line.closest(adapter.keep)) ? [] : [line];
+  // A rule that names no line hides the matched line itself, unless that is
+  // the row's name.
+  function rowLines(rule, row, match) {
+    if (rule.only) return [...row.querySelectorAll(rule.only)].filter((el) => collect(el, []).length > 0);
+    const line = lineOf(match, row);
+    return !line || line.contains(row) || (adapter.keep && closestAcross(line, adapter.keep)) ? [] : [line];
   }
 
+  // ---------- site furniture ----------
+
+  // The site's own navigation, header and footer menus, tab lists, toolbars,
+  // breadcrumbs and search forms are never hidden, and neither is a link or a
+  // button in them. A topic's name in a menu ("GTA 6") tells a spoiler-free
+  // person nothing they do not know, and hidden it broke the menu.
+  const FURNITURE = 'nav,header,footer,menu,[role="navigation"],[role="banner"],[role="contentinfo"],[role="menu"],[role="menubar"],[role="tablist"],[role="toolbar"],[role="search"],[aria-label*="breadcrumb" i],[class*="breadcrumb" i]';
+  const FURNITURE_ITEM = 'a,button,summary,label,li,[role="tab"],[role="menuitem"],[role="link"],[role="button"],[role="option"]';
+  // A menu entry is a short label with no picture. A headline with its picture
+  // in a site's drop-down of latest stories is still a headline, and is hidden.
+  const NAVIGATION = 'nav,[role="navigation"]';
+  const LABEL_MAX = 40;
+  const LABEL_PICTURE = 64;
+  function inFurniture(match) {
+    let region = closestAcross(match, FURNITURE);
+    // A header or footer inside a post is the post's own.
+    while (region && (region.tagName === 'HEADER' || region.tagName === 'FOOTER') && region.parentElement && closestAcross(region.parentElement, POST_LIKE)) {
+      region = region.parentElement ? closestAcross(region.parentElement, FURNITURE) : null;
+    }
+    if (!region) return false;
+    const inner = match.closest(FURNITURE_ITEM);
+    const item = inner && region.contains(inner) ? inner : match;
+    if (item.textContent.trim().replace(/\s+/g, ' ').length > LABEL_MAX) return false;
+    // An icon or a small face beside the label is still a label (the account
+    // switcher); a story's picture is bigger.
+    for (const m of item.querySelectorAll(PART_MEDIA)) {
+      const r = m.getBoundingClientRect();
+      if (r.width > LABEL_PICTURE || r.height > LABEL_PICTURE) return false;
+    }
+    return true;
+  }
+
+  // Pages of a site where nothing is hidden (adapter.off): X's settings, whose
+  // list of muted words is the person's own.
+  const pathOff = () => !!adapter?.off?.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'));
+
   function flag(match) {
-    if (match.closest(SKIP_SEL)) return;
+    if (match.closest(SKIP_SEL) || pathOff()) return;
     if (adapter?.leave && closestAcross(match, adapter.leave)) return;
-    const row = adapter?.rows && closestAcross(match, adapter.rows.in);
-    if (row) {
-      for (const line of rowLines(row, match)) {
+    for (const rule of adapter?.rows || []) {
+      const row = closestAcross(match, rule.in);
+      if (!row) continue;
+      for (const line of rowLines(rule, row, match)) {
         blur(line);
-        // The row is how you open the conversation, so a click on its hidden
-        // line goes through to it; the message asks once it is open.
-        if (isHiddenState(stateOf(line))) line.setAttribute('data-gsb-thru', '');
+        // A row that opens something (a conversation) keeps its click: the
+        // hidden line lets it through, and the message asks once it is open.
+        if (rule.open && isHiddenState(stateOf(line))) line.setAttribute('data-gsb-thru', '');
       }
       return;
     }
     if (adapter?.signals && match.closest(adapter.signals)) queuePageCheck();
     else if (match.closest('h1')) queuePageCheck();
+    // On a site with notes, a card stays a card inside a tab list or a search
+    // form (a filter chip, a search suggestion: the notes list those on
+    // purpose). Inside the site's navigation nothing is a card.
+    const card = adapter && closestAcross(match, adapter.cards);
+    if ((!card || closestAcross(card, NAVIGATION)) && inFurniture(match)) return;
     const target = pickTarget(match);
     if (target) blur(target);
   }
@@ -1273,6 +1365,7 @@
   let pageCheckQueued = false;
 
   function pageIsAboutIt() {
+    if (pathOff()) return false;
     // Pages on the always-blur list are covered even with page covers off.
     if (src.any && src.test(location.href)) return true;
     if (!S.hidePages) return false;
