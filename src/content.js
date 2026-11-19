@@ -248,6 +248,16 @@
     if (CARD_TAG.has(el.tagName)) return true;
     const role = el.getAttribute('role');
     if (role && CARD_ROLE.has(role)) return true;
+    // A link that wraps a whole tile (a picture, a headline, a byline) is a
+    // story tile. Without this the climb passed it by, as a link is an inline
+    // thing, and took the whole section instead.
+    if (el.tagName === 'A') {
+      if (![...el.children].some((c) => !INLINE.has(c.tagName) && c.tagName !== 'IMG' && c.tagName !== 'BR')) return false;
+      // With a picture in it, it is a tile even alone: a lead story is often
+      // the only one of its kind, and a page that is still arriving has not
+      // shown a tile's neighbours yet.
+      return !!el.querySelector('img,picture,video') || (el.childElementCount >= 2 && isRepeated(el));
+    }
     return !INLINE.has(el.tagName) && isRepeated(el);
   }
 
@@ -305,7 +315,10 @@
   function pickGeneric(match, limit) {
     if (match === limit) return null;
     let block = match;
-    while (INLINE.has(block.tagName) && block.parentElement && block.parentElement !== limit && !isWall(block.parentElement)) {
+    // Up through inline wrappers to the line, but not out of a link that is a
+    // story tile: the tile is the post. (Its address often carries the
+    // headline, so the link itself is what matched.)
+    while (INLINE.has(block.tagName) && !(block.tagName === 'A' && isCard(block)) && block.parentElement && block.parentElement !== limit && !isWall(block.parentElement)) {
       block = block.parentElement;
     }
     if (isWall(block)) return null;
@@ -842,6 +855,20 @@
     return is;
   }
 
+  // The site's own button in a hidden card (read more, follow, show more): a
+  // short label that does not name the game, with no picture in it. A real
+  // <button> always qualifies. Something only marked as a button may be the
+  // card's content instead (a question that opens its answer), so it has to be
+  // a thin strip or clearly narrower than the card.
+  function labelButton(b, card) {
+    if (!b) return false;
+    const label = b.textContent.trim().replace(/\s+/g, ' ');
+    if (!label || label.length > LABEL_MAX || hit(label) || hasPicture(b)) return false;
+    if (b.tagName === 'BUTTON') return true;
+    const r = b.getBoundingClientRect();
+    return r.height <= 32 || r.width <= card.getBoundingClientRect().width * 0.6;
+  }
+
   // Splits a card into pieces, each blurred in its own box: every line of
   // text, every picture or video, and every empty leaf (often a CSS
   // background image). The kept channel is never inside a piece. Runs again
@@ -867,7 +894,7 @@
       // The site's own furniture (the avatar, the row of buttons, the menu)
       // says nothing about the game and stays as it is. So does any small
       // button that is only an icon, on every site.
-      if (within(el, adapter?.plain) || iconButton(within(el, BUTTON))) return;
+      if (within(el, adapter?.plain) || iconButton(within(el, BUTTON)) || labelButton(within(el, BUTTON), card)) return;
       if (keeps.some((k) => el.contains(k))) {
         // Split around the channel: take the other branches instead.
         for (const c of el.children) if (!SKIP_TAG.has(c.tagName)) add(c, kind === 't' && !c.textContent.trim() ? 'm' : kind);
@@ -1489,11 +1516,15 @@
 
   const VIDEO_FRAME = /youtube|youtu\.be|vimeo|twitch|tiktok|twitter|x\.com|instagram|facebook|streamable|dailymotion|jwplayer|brightcove/i;
   const MEDIA = 'img,video,canvas,iframe,svg,[style*="background-image"]';
+  const SITE_PICTURES = 'nav,[role="navigation"],[role="menu"],[role="menubar"],[role="tablist"],[role="toolbar"],[role="tooltip"],[popover],[data-testid*="popover" i],[class*="popover" i]';
   function boxMedia(node) {
     if (!pageAbout || !active || node.nodeType !== 1) return;
     const found = node.matches(MEDIA) ? [node] : [...node.querySelectorAll(MEDIA)];
     for (const m of found) {
       if (m.closest(HIDDEN) || m.closest(SKIP_SEL) || m.closest('[data-gsb="0"]')) continue;
+      // The site's own pictures: in its menus (a drop-down's thumbnails) and
+      // in its pop-over promotions. They are not this page's subject.
+      if (m.closest(SITE_PICTURES)) continue;
       // Logos, icons and QR codes are drawn as svg; cookie and sign-in
       // prompts come in frames. Neither is the game.
       if (m.tagName.toLowerCase() === 'svg') continue;
