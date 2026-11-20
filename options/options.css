@@ -137,6 +137,32 @@ button:active { transform: scale(0.98); }
 .choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 0; }
 
 .toggle { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.buttons { display: flex; align-items: center; gap: 8px; }
+.buttons button.quiet { margin: 0; height: 36px; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:disabled:hover { background: var(--raised); }
+button.quiet:disabled:hover { background: none; color: var(--text-2); }
+
+/* ---- a save that was cut short or refused ---- */
+.save-note {
+  position: fixed; z-index: 2; left: 50%; bottom: 24px; max-width: min(560px, calc(100vw - 48px)); margin: 0; padding: 12px 16px;
+  border-radius: 12px; background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong), 0 12px 32px rgba(0, 0, 0, 0.4);
+  font-size: 14px; line-height: 20px; transform: translateX(-50%); animation: note-in var(--moderate) var(--ease) both;
+}
+.save-note[hidden] { display: none; }
+@keyframes note-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+@media (prefers-reduced-motion: reduce) { .save-note { animation-name: none; } }
+
+/* ---- the end date ---- */
+.date-row { display: flex; align-items: center; gap: 12px; }
+.date-row button.quiet { margin: 0; }
+input[type="date"] {
+  height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--raised); color: var(--text); color-scheme: dark;
+  box-shadow: inset 0 0 0 1px var(--line); font: 400 14px/20px var(--sans); font-variant-numeric: tabular-nums;
+  transition: box-shadow var(--fast) var(--ease);
+}
+input[type="date"]:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+input[type="date"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 .toggle .switch { margin-top: 2px; }
 
 /* ---- lists of sites, handles and subreddits: rows with a hairline between them ---- */

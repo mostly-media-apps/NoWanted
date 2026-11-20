@@ -30,6 +30,12 @@
       <span class="tally-words"><span>spoilers blocked</span><span class="mono" id="count" role="status"></span></span>
     </div>
 
+    <!-- Shown once, the first time the menu is opened after the end date switched hiding off -->
+    <div class="ended" id="ended" role="status" hidden>
+      <p id="ended-text"></p>
+      <div class="ended-row"><button type="button" id="ended-on">Switch back on</button><button type="button" class="ended-keep" id="ended-keep">Keep it off</button></div>
+    </div>
+
     <nav class="apps" id="apps" aria-label="Block an account"></nav>
 
     <div class="dock">
@@ -92,6 +98,7 @@
       </div>
       </div>
     </section>
+    <p class="save-note" id="save-note" role="alert" hidden></p>
   </div>
 </div>
 

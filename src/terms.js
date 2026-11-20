@@ -113,7 +113,16 @@
     tag: 'Spoilers', // the word in the corner of a hidden post
     badge: true, // the count on the toolbar button
     updates: true, // download the daily rules file (new words and site fixes)
+    endDate: '', // "Stop hiding on": a day as YYYY-MM-DD, or none
+    ended: '', // the day hiding stopped by itself, until the menu has said so once
   };
+
+  // Days are compared as text, in the person's own time zone.
+  const dayKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // Has the day set under "Stop hiding on" come?
+  const endPassed = (settings, now = new Date()) => /^\d{4}-\d{2}-\d{2}$/.test(settings?.endDate || '') && dayKey(now) >= settings.endDate;
+  // What to save when it has: hiding off, the date cleared, and the day kept so the menu can say so once.
+  const endPatch = (settings) => ({ enabled: false, endDate: '', ended: settings.endDate });
 
   // Frame looks. Each is a border-image source and a solid color for the
   // places that can only take one (outlines).
@@ -297,5 +306,5 @@
     return String(hostname || '').replace(/^www\./, '').toLowerCase();
   }
 
-  globalThis.GSB = { SUPPORT_URL, DEFAULTS, FRAMES, TAGS, LEVELS, PRESETS, buildMatcher, aboutOldGame, buildSources, parseSource, normalize, urlText, siteOf };
+  globalThis.GSB = { dayKey, endPassed, endPatch, SUPPORT_URL, DEFAULTS, FRAMES, TAGS, LEVELS, PRESETS, buildMatcher, aboutOldGame, buildSources, parseSource, normalize, urlText, siteOf };
 })();

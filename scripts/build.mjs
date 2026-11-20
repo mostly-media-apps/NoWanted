@@ -13,7 +13,7 @@ const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
 function firefox(m) {
   const out = structuredClone(m);
   delete out.minimum_chrome_version;
-  out.background = { scripts: [m.background.service_worker] };
+  out.background = { scripts: ['src/rules.js', m.background.service_worker] };
   out.host_permissions = ['<all_urls>'];
   out.browser_specific_settings = {
     gecko: {
@@ -36,7 +36,7 @@ function firefox(m) {
 function safari(m) {
   const out = structuredClone(m);
   delete out.minimum_chrome_version;
-  out.background = { scripts: [m.background.service_worker], persistent: false };
+  out.background = { scripts: ['src/rules.js', m.background.service_worker], persistent: false };
   delete out.options_ui.open_in_tab;
   return out;
 }
@@ -51,7 +51,7 @@ for (const [name, m] of [['chrome', manifest], ['firefox', firefox(manifest)], [
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(m, null, 2) + '\n');
   // Everything the manifest names has to be in the package.
   const named = [m.background.service_worker, ...(m.background.scripts || []), m.action.default_popup, m.options_ui.page, ...Object.values(m.icons),
-    ...m.content_scripts.flatMap((c) => [...c.js, ...(c.css || [])]), ...(m.web_accessible_resources || []).flatMap((w) => w.resources)].filter(Boolean);
+    ...m.content_scripts.flatMap((c) => [...c.js, ...(c.css || [])])].filter(Boolean);
   for (const file of named) if (!existsSync(join(dir, file))) throw new Error(`${name}: the manifest names ${file}, which is not in the package`);
   if (name === 'safari') { console.log(dir); continue; }
   const zip = join(dist, `nowanted-${name}-${m.version}.zip`);

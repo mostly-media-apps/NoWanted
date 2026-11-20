@@ -1,4 +1,5 @@
 // Keeps the toolbar count for each tab and the running total.
+if (!globalThis.GSB?.SITE_KEYS && typeof importScripts === 'function') importScripts('rules.js');
 const api = globalThis.browser ?? globalThis.chrome;
 
 const perTab = new Map(); // tabId -> Map(frameId -> count)
@@ -74,6 +75,17 @@ api.runtime.onMessage.addListener((msg, sender, respond) => {
   }
   const tabId = sender.tab?.id;
   if (tabId == null) return;
+  if (msg.type === 'veilAssets') {
+    loadVeilAssets().then(respond, () => respond(null));
+    return true;
+  }
+  if (msg.type === 'menuTarget') return void nameMenu(!!msg.hidden);
+  if (msg.type === 'cover') return void tellFrames(tabId, msg.on);
+  if (msg.type === 'coverAsk') {
+    // Only the page itself knows; a sleeping worker has nothing to remember.
+    api.tabs.sendMessage(tabId, { type: 'coverQuery' }, { frameId: 0 }).then((v) => respond(!!v?.on), () => respond(false));
+    return true;
+  }
   if (msg.type === 'count') {
     if (RULES_URL && (rulesNext === null || Date.now() >= rulesNext)) refreshRules();
     if (!perTab.has(tabId)) perTab.set(tabId, new Map());
@@ -87,10 +99,89 @@ api.runtime.onMessage.addListener((msg, sender, respond) => {
 
 api.tabs.onRemoved.addListener((tabId) => perTab.delete(tabId));
 
+// ---------- the right-click menu ----------
+// One entry. What it does is decided by the page, which knows what is under
+// the pointer: something hidden is shown ("This is not a spoiler"), anything
+// else is hidden. With two entries the wrong one could be on the menu, because
+// this worker may be asleep when the menu opens and the page's note about what
+// is under the pointer can arrive after it. With one entry only its words can
+// lag: they say both until the note arrives, and then the one that applies.
+// Nothing is sent anywhere. Browsers without this menu (Safari on iPhone)
+// simply have none.
+const MENU = {
+  entries: { act: {} },
+  any: 'Hide or show this with No Wanted',
+  hide: 'Hide this with No Wanted',
+  show: 'This is not a spoiler',
+};
+const MENU_WORDS_MS = 4000; // exact words are for the menu being opened now, not for the next one
+const menuTitle = (hidden) => (hidden === true ? MENU.show : hidden === false ? MENU.hide : MENU.any);
+function buildMenu() {
+  if (!api.contextMenus?.create) return;
+  try {
+    api.contextMenus.removeAll(() => {
+      api.contextMenus.create({ id: 'nw-act', title: MENU.any, contexts: ['all'], documentUrlPatterns: ['http://*/*', 'https://*/*'] }, () => void api.runtime.lastError);
+    });
+  } catch {
+    // no menu in this browser
+  }
+}
+api.runtime.onInstalled.addListener(buildMenu);
+api.runtime.onStartup?.addListener(buildMenu);
+api.contextMenus?.onClicked?.addListener((info, tab) => {
+  if (info.menuItemId !== 'nw-act' || tab?.id == null) return;
+  api.tabs.sendMessage(tab.id, { type: 'menuAction' }, { frameId: info.frameId ?? 0 }).catch(() => {});
+  nameMenu(null);
+});
+let menuWords = 0;
+function nameMenu(hidden) {
+  if (!api.contextMenus?.update) return;
+  clearTimeout(menuWords);
+  try {
+    api.contextMenus.update('nw-act', { title: menuTitle(hidden) }, () => void api.runtime.lastError);
+  } catch {
+    // the entry is not there yet
+  }
+  if (hidden !== null) menuWords = setTimeout(() => nameMenu(null), MENU_WORDS_MS);
+}
+
+// ---------- a covered page and the frames in it ----------
+// The cover is drawn by the page itself (the top frame). A player embedded
+// from another site lives in a frame of its own, which cannot see the cover,
+// so the page says "covered" or "shown" here and every frame of that tab is
+// told. A frame that arrives later asks, and the answer comes from the page.
+function tellFrames(tabId, on) {
+  api.tabs.sendMessage(tabId, { type: 'cover', on: !!on }).catch(() => {});
+}
+
 api.runtime.onInstalled.addListener(() => {
   api.action.setBadgeBackgroundColor({ color: '#232325' }).catch(() => {});
   api.action.setBadgeTextColor?.({ color: '#ededed' })?.catch?.(() => {});
 });
+
+// Cover artwork and display font, read inside the extension's own origin so
+// content scripts never load chrome-extension:// URLs in a web page's context.
+let veilAssetsPromise = null;
+function bytesToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  }
+  return btoa(bin);
+}
+function loadVeilAssets() {
+  return (veilAssetsPromise ??= Promise.all([
+    fetch(api.runtime.getURL('art/scene.svg')).then((r) => (r.ok ? r.text() : '')),
+    fetch(api.runtime.getURL('fonts/anton-latin-400-normal.woff2')).then((r) => (r.ok ? r.arrayBuffer() : null)),
+  ]).then(([svg, buf]) => ({
+    svg,
+    font: buf ? bytesToBase64(buf) : '',
+  })).catch(() => {
+    veilAssetsPromise = null;
+    return null;
+  }));
+}
 
 // ---------- the daily rules file ----------
 // New words, always-blur accounts and per-site selectors, so a site's redesign
@@ -103,15 +194,36 @@ const RULES_RETRY = 60 * 60 * 1000;
 const RULES_MAX_BYTES = 100 * 1024;
 let rulesNext = null; // when the next check is due; null until read from storage
 
+const SITE_LIST_LIMITS = { cards: [60, 200], signals: [20, 200] };
+
 function cleanRules(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1) return null;
   const strings = (v, max, len) => (Array.isArray(v) ? v.filter((s) => typeof s === 'string' && s.trim() && s.length <= len).slice(0, max) : []);
   const one = (s) => (typeof s === 'string' && s.trim() && s.length <= 400 ? s : null);
+  const { SITE_LIST_KEYS, SITE_SEL_KEYS } = globalThis.GSB;
   const sites = {};
   if (raw.sites && typeof raw.sites === 'object' && !Array.isArray(raw.sites)) {
     for (const [host, v] of Object.entries(raw.sites).slice(0, 100)) {
       if (!/^[a-z0-9.-]{3,80}$/.test(host) || !v || typeof v !== 'object') continue;
-      sites[host] = { cards: strings(v.cards, 60, 200), signals: strings(v.signals, 20, 200), keep: one(v.keep), by: one(v.by), comments: one(v.comments) };
+      const entry = {};
+      for (const key of SITE_LIST_KEYS) {
+        const [max, len] = SITE_LIST_LIMITS[key] || [20, 200];
+        entry[key] = strings(v[key], max, len);
+      }
+      for (const key of SITE_SEL_KEYS) entry[key] = one(v[key]);
+      entry.rows = Array.isArray(v.rows)
+        ? v.rows.slice(0, 30).reduce((acc, r) => {
+          if (!r || typeof r !== 'object') return acc;
+          const within = one(r.in);
+          if (!within) return acc;
+          const only = r.only == null ? null : one(r.only);
+          if (r.only != null && !only) return acc;
+          acc.push({ in: within, only, open: r.open === true });
+          return acc;
+        }, [])
+        : [];
+      entry.off = strings(v.off, 50, 120).filter((p) => p.startsWith('/'));
+      sites[host] = entry;
     }
   }
   return {

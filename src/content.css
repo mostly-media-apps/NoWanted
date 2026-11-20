@@ -1,42 +1,42 @@
 /* Written from style.js by scripts/css.mjs. Edit style.js, not this file. */
-[data-gsb="1"] [data-gsb-part],
-[data-gsb="2"] [data-gsb-part] {
+[data-gsb="1"]:not(#_a#_b) [data-gsb-part],
+[data-gsb="2"]:not(#_a#_b) [data-gsb-part] {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;
   clip-path: inset(0 round 8px) !important;
   -webkit-user-select: none !important;
   user-select: none !important;
 }
-[data-gsb="1"] [data-gsb-part="t"],
-[data-gsb="2"] [data-gsb-part="t"] {
+[data-gsb="1"]:not(#_a#_b) [data-gsb-part="t"],
+[data-gsb="2"]:not(#_a#_b) [data-gsb-part="t"] {
   filter: blur(max(6px, calc(var(--gsb-blur, 20px) * 0.4))) grayscale(0.7) !important;
   clip-path: inset(0 round 4px) !important;
 }
-[data-gsb="1"][data-gsb-ok] [data-gsb-part]:hover,
-[data-gsb="2"][data-gsb-ok] [data-gsb-part]:hover {
+[data-gsb="1"][data-gsb-ok]:not(#_a#_b) [data-gsb-part]:hover,
+[data-gsb="2"][data-gsb-ok]:not(#_a#_b) [data-gsb-part]:hover {
   filter: none !important;
   clip-path: none !important;
 }
 
 /* A small item ("3"): its text is turned into a blurred shadow instead of
    filtering the element, so the frame drawn on it stays sharp. */
-[data-gsb="3"]:not([data-gsb-ok]:hover),
-[data-gsb="3"]:not([data-gsb-ok]:hover) * {
+[data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]:hover),
+[data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]:hover) * {
   color: transparent !important;
   -webkit-text-fill-color: transparent !important;
   text-shadow: 0 0 max(8px, calc(var(--gsb-blur, 20px) * 0.5)) rgba(128, 128, 128, 0.9) !important;
   -webkit-user-select: none !important;
   user-select: none !important;
 }
-[data-gsb="3"]:not([data-gsb-ok]:hover) :is(img, video, canvas, svg, iframe, object, embed),
-:is(img, video, canvas, svg, iframe, object, embed)[data-gsb="3"]:not([data-gsb-ok]:hover) {
+[data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]:hover) :is(img, video, canvas, svg, iframe, object, embed),
+:is(img, video, canvas, svg, iframe, object, embed)[data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]:hover) {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;
 }
 /* A bare picture with nothing to wrap it in: an outline is the one frame it can take. */
-:is(img, video, canvas, iframe, embed, object)[data-gsb="3"] { outline: 2px solid var(--gsb-edge, #ff4fa3) !important; outline-offset: -2px !important; }
+:is(img, video, canvas, iframe, embed, object)[data-gsb="3"]:not(#_a#_b) { outline: 2px solid var(--gsb-edge, #ff4fa3) !important; outline-offset: -2px !important; }
 /* Its own stacking context, so the frame stays under the site's sticky headers. */
-[data-gsb="3"] { isolation: isolate !important; }
-[data-gsb="3"][data-gsb-rel] { position: relative !important; }
-[data-gsb="3"]::after {
+[data-gsb="3"]:not(#_a#_b) { isolation: isolate !important; }
+[data-gsb="3"][data-gsb-rel]:not(#_a#_b) { position: relative !important; }
+[data-gsb="3"]:not(#_a#_b)::after {
   content: "" !important; position: absolute !important; inset: var(--gsb-in, -2px) !important; z-index: 2147483000 !important;
   display: block !important; box-sizing: border-box !important; margin: 0 !important; padding: 0 !important;
   width: auto !important; height: auto !important;
@@ -49,30 +49,30 @@
   filter: none !important; opacity: 1 !important; transform: none !important; visibility: visible !important;
   pointer-events: none !important; transition: none !important; animation: none !important;
 }
-[data-gsb="3"][data-gsb-ask]::after { border-width: 4px !important; }
+[data-gsb="3"][data-gsb-ask]:not(#_a#_b)::after { border-width: 4px !important; }
 
 /* A card with no box of its own ("2"): each child carries the frame. */
-[data-gsb="2"] > * { outline: 2px solid var(--gsb-edge, #ff4fa3) !important; outline-offset: -2px !important; }
-[data-gsb="2"][data-gsb-ask] > * { outline-width: 4px !important; }
+[data-gsb="2"]:not(#_a#_b) > * { outline: 2px solid var(--gsb-edge, #ff4fa3) !important; outline-offset: -2px !important; }
+[data-gsb="2"][data-gsb-ask]:not(#_a#_b) > * { outline-width: 4px !important; }
 
-[data-gsb="1"]:not([data-gsb-ok]), [data-gsb="2"]:not([data-gsb-ok]), [data-gsb="3"]:not([data-gsb-ok]) { cursor: pointer !important; }
-:root[data-gsb-locked] [data-gsb="1"], :root[data-gsb-locked] [data-gsb="2"], :root[data-gsb-locked] [data-gsb="3"] { cursor: default !important; }
+[data-gsb="1"]:not(#_a#_b):not([data-gsb-ok]), [data-gsb="2"]:not(#_a#_b):not([data-gsb-ok]), [data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]) { cursor: pointer !important; }
+:root[data-gsb-locked] [data-gsb="1"]:not(#_a#_b), :root[data-gsb-locked] [data-gsb="2"]:not(#_a#_b), :root[data-gsb-locked] [data-gsb="3"]:not(#_a#_b) { cursor: default !important; }
 /* Nothing inside a hidden post takes a click, except the site's own menu
    button (data-gsb-live). That button and what is inside it are left exactly
    as the site styled them: forcing them on would also switch on the invisible
    layers sites lay over a button, which then swallow the click. */
-[data-gsb="1"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
-[data-gsb="2"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
-[data-gsb="3"]:not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *) { pointer-events: none !important; }
+[data-gsb="1"]:not(#_a#_b):not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
+[data-gsb="2"]:not(#_a#_b):not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *),
+[data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]) *:not([data-gsb-live], [data-gsb-live] *) { pointer-events: none !important; }
 /* The button itself is switched back on (it would inherit "none" from its
    parent). What is inside it then follows the site's own rules. */
-[data-gsb="1"]:not([data-gsb-ok]) [data-gsb-live], [data-gsb="2"]:not([data-gsb-ok]) [data-gsb-live], [data-gsb="3"]:not([data-gsb-ok]) [data-gsb-live] { pointer-events: auto !important; }
+[data-gsb="1"]:not(#_a#_b):not([data-gsb-ok]) [data-gsb-live], [data-gsb="2"]:not(#_a#_b):not([data-gsb-ok]) [data-gsb-live], [data-gsb="3"]:not(#_a#_b):not([data-gsb-ok]) [data-gsb-live] { pointer-events: auto !important; }
 
-[data-gsb="1"] { isolation: isolate !important; }
-[data-gsb="1"][data-gsb-rel] { position: relative !important; }
+[data-gsb="1"]:not(#_a#_b) { isolation: isolate !important; }
+[data-gsb="1"][data-gsb-rel]:not(#_a#_b) { position: relative !important; }
 
-[data-gsb="1"]::before,
-[data-gsb="1"]::after {
+[data-gsb="1"]:not(#_a#_b)::before,
+[data-gsb="1"]:not(#_a#_b)::after {
   position: absolute !important; z-index: 2147483000 !important;
   box-sizing: border-box !important; margin: 0 !important;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
@@ -90,7 +90,7 @@
    edge where something would clip it, 4px inside on a post that clips its own
    paint. The mask keeps only the 2px border ring of a gradient background, so
    the line is the same width all the way round, corners included. */
-[data-gsb="1"]::before {
+[data-gsb="1"]:not(#_a#_b)::before {
   content: "" !important;
   inset: var(--gsb-in, -4px) !important; width: auto !important; height: auto !important; padding: 0 !important;
   display: block !important;
@@ -104,7 +104,7 @@
 }
 
 /* The tag in the corner, with the channel when it could not be kept in place. */
-[data-gsb="1"]::after {
+[data-gsb="1"]:not(#_a#_b)::after {
   content: var(--gsb-tag, "Spoilers") !important;
   inset: auto !important; top: var(--gsb-tag-y, 8px) !important; right: var(--gsb-tag-x, 8px) !important;
   display: block !important; width: auto !important; max-width: calc(100% - 16px) !important; height: 20px !important;
@@ -112,14 +112,14 @@
   background: rgba(22, 12, 28, 0.88) !important; color: #ffffff !important;
   font-size: 11px !important; line-height: 20px !important; font-weight: 600 !important;
 }
-[data-gsb="1"][data-gsb-by]::after { content: var(--gsb-tag, "Spoilers") " · " attr(data-gsb-by) !important; }
+[data-gsb="1"][data-gsb-by]:not(#_a#_b)::after { content: var(--gsb-tag, "Spoilers") " · " attr(data-gsb-by) !important; }
 
 /* Asking: a small panel in the middle, so the rest of the card (and its
    channel) stays in view. The button is drawn at a fixed spot so content.js
    knows where it is: 136 by 32, starting 4px below the middle. */
 /* The panel and the frame share the one overlay, so the mask lets both through:
    the panel's shape on top of the border ring. */
-[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok], [data-gsb-b])::before {
+[data-gsb="1"][data-gsb-ask]:not(#_a#_b):not([data-gsb-ok], [data-gsb-b])::before {
   content: "Show spoilers?" !important;
   display: flex !important; align-items: center !important; justify-content: center !important;
   padding-bottom: 36px !important;
@@ -129,16 +129,16 @@
   -webkit-mask-composite: source-over, xor !important;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='184' height='96'%3E%3Crect width='184' height='96' rx='12'/%3E%3C/svg%3E") center / 184px 96px no-repeat add, linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0) border-box !important;
 }
-[data-gsb="1"][data-gsb-ask]:not([data-gsb-ok], [data-gsb-b])::after {
+[data-gsb="1"][data-gsb-ask]:not(#_a#_b):not([data-gsb-ok], [data-gsb-b])::after {
   content: "Yes, let me peek" !important;
   top: 50% !important; left: 50% !important; right: auto !important; width: 136px !important; max-width: none !important; height: 32px !important;
   margin: 4px 0 0 -68px !important; padding: 0 !important; border-radius: 8px !important;
   background: #ededed !important; color: #171717 !important;
   font-size: 13px !important; line-height: 32px !important; font-weight: 600 !important;
 }
-[data-gsb="1"][data-gsb-ask][data-gsb-over]:not([data-gsb-ok], [data-gsb-b])::after { background: #ffffff !important; }
+[data-gsb="1"][data-gsb-ask][data-gsb-over]:not(#_a#_b):not([data-gsb-ok], [data-gsb-b])::after { background: #ffffff !important; }
 /* A short card has room for the button only. */
-[data-gsb="1"][data-gsb-ask][data-gsb-sm]:not([data-gsb-ok])::before {
+[data-gsb="1"][data-gsb-ask][data-gsb-sm]:not(#_a#_b):not([data-gsb-ok])::before {
   content: "" !important; padding: 0 !important;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='44'%3E%3Crect width='160' height='44' rx='10' fill='rgb(22,12,28)'/%3E%3C/svg%3E") center / 160px 44px no-repeat,
     var(--gsb-frame, linear-gradient(135deg, #ff4fa3, #ff8a3d 55%, #8b3fd9)) border-box !important;
@@ -146,7 +146,7 @@
   -webkit-mask-composite: source-over, xor !important;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='44'%3E%3Crect width='160' height='44' rx='10'/%3E%3C/svg%3E") center / 160px 44px no-repeat add, linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0) border-box !important;
 }
-[data-gsb="1"][data-gsb-ask][data-gsb-sm]:not([data-gsb-ok])::after { margin-top: -16px !important; }
+[data-gsb="1"][data-gsb-ask][data-gsb-sm]:not(#_a#_b):not([data-gsb-ok])::after { margin-top: -16px !important; }
 /* A card too narrow for the button asks in the bubble next to it, and shows
    it is the one being asked about with a heavier frame, as a small item does. */
-[data-gsb="1"][data-gsb-b][data-gsb-ask]:not([data-gsb-ok])::before { border-width: 4px !important; }
+[data-gsb="1"][data-gsb-b][data-gsb-ask]:not(#_a#_b):not([data-gsb-ok])::before { border-width: 4px !important; }

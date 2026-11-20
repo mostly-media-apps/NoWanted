@@ -18,7 +18,7 @@
     <label class="power"><span class="switch" title="Turn No Wanted on or off"><input type="checkbox" id="enabled" aria-label="No Wanted on"><span class="track"><span class="knob"></span></span></span><span id="power-word">On</span></label>
     <footer>
     <p>Nothing about you leaves this browser</p>
-    <span class="foot-end"><a href="mailto:bugs@nowanted.online?subject=No Wanted%20missed%20something">Report a miss</a><a id="support" target="_blank" rel="noopener" hidden>Support No Wanted</a><a href="https://nowanted.online/privacy.html" target="_blank" rel="noopener">Privacy</a><span class="mono" id="version"></span></span>
+    <span class="foot-end"><a href="mailto:bugs@nowanted.online?subject=No Wanted%20missed%20something">Report a miss</a><a id="support" target="_blank" rel="noopener" hidden>Support No Wanted</a><a href="https://nowanted.online/privacy" target="_blank" rel="noopener">Privacy</a><span class="mono" id="version"></span></span>
     </footer>
   </div>
 </aside>
@@ -132,6 +132,22 @@
     </div>
   </section>
 
+  <section class="card" aria-labelledby="stop-h">
+    <h2 id="stop-h">When to stop</h2>
+    <div class="stack">
+      <label for="end-date">Stop hiding on</label>
+      <div class="date-row">
+        <input type="date" id="end-date">
+        <button type="button" class="quiet" id="end-clear" hidden>Clear</button>
+      </div>
+      <span class="choice-note" id="end-note"></span>
+    </div>
+    <div class="stack">
+      <span><span>Done with the story?</span><span class="choice-note">Switches hiding off on every site. The switch on the left turns it back on</span></span>
+      <div class="buttons"><button type="button" id="finished">I have finished the game</button></div>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Sites left alone</h2>
     <p class="choice-note" id="sites-empty"><strong class="bold-name">No Wanted</strong> runs on every site. Add one here to switch it off there</p>
@@ -150,6 +166,15 @@
     </div>
   </section>
 
+  <section class="card" aria-labelledby="reports-h">
+    <h2 id="reports-h">Reports</h2>
+    <p class="choice-note">Right-click anything and choose “Hide this with No Wanted”, or right-click a blur and choose “This is not a spoiler”. Each use is noted here as the site’s name and the kind of thing it was, never the words on the page or its address. Nothing is sent</p>
+    <div class="stack">
+      <span><span id="reports-count" role="status">No reports saved</span><span class="choice-note">Export saves a file you can email to bugs@nowanted.online if you choose to</span></span>
+      <div class="buttons"><button type="button" id="export-reports">Export reports</button><button type="button" class="quiet" id="clear-reports">Delete</button></div>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Always blur</h2>
     <p class="choice-note">Anything from these is hidden, whatever the post says. Visiting one covers the page</p>
@@ -163,6 +188,7 @@
   </section>
 </div>
 </main>
+<p class="save-note" id="save-note" role="alert" hidden></p>
 <script src="../src/terms.js"></script>
 <script type="module" src="options.js"></script>
 </body>

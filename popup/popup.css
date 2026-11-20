@@ -44,6 +44,23 @@ body { margin-inline: auto; }
 /* The tally: how much it has caught, on the sky under the name. */
 /* The figure is as tall as its two lines of words. */
 .tally { display: flex; align-items: center; gap: 12px; padding: 12px 24px 0; }
+/* A save that was cut short or refused. */
+.save-note { position: absolute; z-index: 5; left: 16px; right: 16px; bottom: 16px; margin: 0; padding: 12px; border-radius: 12px; background: rgba(12, 7, 20, 0.92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); font-size: 13px; line-height: 20px; color: #ffffff; animation: ended-in var(--moderate) var(--ease) both; }
+.save-note[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .save-note { animation-name: none; } }
+/* The end date has passed: said once, with the way back. */
+.ended { margin: 12px 24px 0; padding: 12px; border-radius: 12px; background: rgba(12, 7, 20, 0.72); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); animation: ended-in var(--moderate) var(--ease) both; }
+.ended[hidden] { display: none; }
+.ended p { margin: 0; font-size: 13px; line-height: 20px; color: #ffffff; }
+.ended-row { display: flex; gap: 8px; margin-top: 8px; }
+.ended button { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: #ededed; color: #171717; font: 500 13px/20px var(--sans); cursor: pointer; transition: background-color var(--fast) var(--ease), transform var(--fast) var(--ease); }
+.ended button:hover { background: #ffffff; }
+.ended button:active { transform: scale(0.98); }
+.ended button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ended .ended-keep { background: none; color: rgba(255, 255, 255, 0.9); font-weight: 400; }
+.ended .ended-keep:hover { background: rgba(255, 255, 255, 0.12); }
+@keyframes ended-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .ended { animation-name: none; } }
 .tally .big { font-size: 32px; line-height: 32px; color: #ffffff; }
 .tally-words { display: grid; font-size: 13px; line-height: 16px; color: rgba(255, 255, 255, 0.9); }
 .tally-words .mono { font-size: 11px; line-height: 16px; color: rgba(255, 255, 255, 0.7); }

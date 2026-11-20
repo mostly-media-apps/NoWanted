@@ -18,21 +18,50 @@
 // in a shadow root long after the page has loaded (X's Chat does), and from
 // outside nothing shows that it happened, so that part stayed unread.
 (() => {
-  const attach = globalThis.Element?.prototype.attachShadow;
-  if (attach) {
-    // Written as a method so the replacement is still named "attachShadow".
-    Element.prototype.attachShadow = {
-      attachShadow() {
-        const root = attach.apply(this, arguments);
-        try {
-          this.dispatchEvent(new Event('gsb-shadow', { bubbles: true, composed: true }));
-        } catch {
-          // the site's call is never held up by this
-        }
-        return root;
-      },
-    }.attachShadow;
+  'use strict';
+  const MARK = Symbol.for('gsb.hold');
+  if (globalThis[MARK]) return;
+  try {
+    Object.defineProperty(globalThis, MARK, { value: true });
+  } catch {
+    // globalThis may be non-extensible; each patch checks MARK on its own wrapper
   }
+
+  function replaceMethod(proto, key, make) {
+    if (!proto) return;
+    try {
+      const desc = Object.getOwnPropertyDescriptor(proto, key);
+      const orig = desc && 'value' in desc ? desc.value : proto[key];
+      if (typeof orig !== 'function' || orig[MARK]) return;
+      const wrapped = make(orig);
+      wrapped[MARK] = true;
+      if (!desc || desc.writable) {
+        proto[key] = wrapped;
+      } else if (desc.configurable) {
+        Object.defineProperty(proto, key, {
+          configurable: true,
+          enumerable: desc.enumerable,
+          writable: false,
+          value: wrapped,
+        });
+      }
+    } catch {
+      // Another script may have locked or guarded this property; leave it alone.
+    }
+  }
+
+  replaceMethod(globalThis.Element?.prototype, 'attachShadow', (attach) => ({
+    // Written as a method so the replacement is still named "attachShadow".
+    attachShadow() {
+      const root = attach.apply(this, arguments);
+      try {
+        this.dispatchEvent(new Event('gsb-shadow', { bubbles: true, composed: true }));
+      } catch {
+        // the site's call is never held up by this
+      }
+      return root;
+    },
+  }).attachShadow);
 
   const HOLD = 'data-gsb-hold';
   // On <html> while No Wanted is on and set to stop media in hidden items.
@@ -63,22 +92,25 @@
     }
   };
 
-  // Written as a method so the replacement is still named "play".
-  const play = proto.play;
-  proto.play = {
+  replaceMethod(proto, 'play', (play) => ({
+    // Written as a method so the replacement is still named "play".
     play() {
       if (held(this)) return Promise.reject(new DOMException('The video is hidden, so it stays stopped', 'NotAllowedError'));
       return play.apply(this, arguments);
     },
-  }.play;
+  }).play);
 
-  const muted = Object.getOwnPropertyDescriptor(proto, 'muted');
-  if (muted?.set) {
-    Object.defineProperty(proto, 'muted', {
-      ...muted,
-      set(value) {
-        muted.set.call(this, held(this) ? true : value);
-      },
-    });
+  try {
+    const muted = Object.getOwnPropertyDescriptor(proto, 'muted');
+    if (muted?.configurable && typeof muted.set === 'function' && !muted.set[MARK]) {
+      const origSet = muted.set;
+      const set = function (value) {
+        origSet.call(this, held(this) ? true : value);
+      };
+      set[MARK] = true;
+      Object.defineProperty(proto, 'muted', { ...muted, set });
+    }
+  } catch {
+    // Another script may have locked muted; leave it alone.
   }
 })();

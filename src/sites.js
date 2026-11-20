@@ -52,10 +52,7 @@
       // A post blurs as two clean shapes, its text and its media. The avatar,
       // the row of buttons and the menu stay as they are, and the menu works.
       blocks: '[data-testid="tweetText"], [data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="card.wrapper"], [data-testid="article-cover-image"]',
-      // The last entry is not X's: the Ground News extension adds a row under
-      // a post's buttons (its mark, a count and bias percentages). It says
-      // nothing about the game, and blurred it became a bright smear.
-      plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"])), [class*="tw-flex"][class*="tw-justify-end"]',
+      plain: '[data-testid="Tweet-User-Avatar"], [data-testid="caret"], [role="group"], [data-testid="socialContext"], button:not(:has(img, video)), [role="button"]:not(:has(img, video, [data-testid="tweetText"]))',
       live: '[data-testid="caret"]',
       // The label sits left of a post's own buttons: 12px down, 80px in from the
       // right. A message bubble has no buttons, so there it takes the usual corner.
@@ -259,20 +256,27 @@
       blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null,
       leave: found?.leave || null, whole: found?.whole || null, rows: found?.rows || null, elsewhere: found?.elsewhere || null, off: found?.off || null };
     let fixed = false;
+    const lists = { cards, signals };
+    const { SITE_LIST_KEYS, SITE_SEL_KEYS } = globalThis.GSB;
     for (const [h, fix] of Object.entries(extra || {})) {
       if (!fix || typeof fix !== 'object' || !onHost(host, String(h).toLowerCase())) continue;
       fixed = true;
-      for (const sel of Array.isArray(fix.cards) ? fix.cards : []) if (usable(sel)) cards.push(sel);
-      for (const sel of Array.isArray(fix.signals) ? fix.signals : []) if (usable(sel)) signals.push(sel);
-      for (const key of ['keep', 'by', 'comments', 'blocks', 'plain', 'live', 'leave', 'whole']) if (usable(fix[key])) out[key] = fix[key];
+      for (const key of SITE_LIST_KEYS) {
+        for (const sel of Array.isArray(fix[key]) ? fix[key] : []) if (usable(sel)) lists[key].push(sel);
+      }
+      for (const key of SITE_SEL_KEYS) if (usable(fix[key])) out[key] = fix[key];
       if (Array.isArray(fix.rows)) {
         const rows = fix.rows.filter((r) => r && usable(r.in) && (r.only == null || usable(r.only))).map((r) => ({ in: r.in, only: r.only || null, open: r.open === true }));
         if (rows.length) out.rows = rows;
       }
-      if (Array.isArray(fix.off)) out.off = fix.off.filter((p) => typeof p === 'string' && p.startsWith('/'));
+      if (Array.isArray(fix.off)) {
+        const off = fix.off.filter((p) => typeof p === 'string' && p.startsWith('/'));
+        if (off.length) out.off = off;
+      }
     }
-    if (!found && !(fixed && cards.length)) return null;
-    return { cards: cards.join(','), signals: signals.length ? signals.join(',') : null, ...out };
+    const hasFix = fixed && (cards.length || signals.length || out.rows?.length || out.off?.length || SITE_SEL_KEYS.some((k) => out[k]));
+    if (!found && !hasFix) return null;
+    return { cards: cards.length ? cards.join(',') : ':not(*)', signals: signals.length ? signals.join(',') : null, ...out };
   }
 
   globalThis.GSB.adapterFor = adapterFor;

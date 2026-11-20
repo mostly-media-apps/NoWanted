@@ -1,4 +1,4 @@
-import { api, G, loadSettings, save, onSettings, number } from '../ui/ui.js';
+import { api, G, loadSettings, save, onSaved, saveNote, onSettings, number } from '../ui/ui.js';
 import { GLYPHS } from './glyphs.js';
 import { readStats, barList, weekBars, KIND_NAMES } from '../ui/stats.js';
 
@@ -250,6 +250,20 @@ function set(patch) {
   draw();
 }
 
+// A save that was cut short or refused is said at the foot of the menu, and
+// the menu then shows what is really stored.
+let saveNoteTimer = 0;
+onSaved(async (result) => {
+  const text = saveNote(result);
+  const note = $('save-note');
+  clearTimeout(saveNoteTimer);
+  if (!text) return void (note.hidden = true);
+  note.textContent = text;
+  note.hidden = false;
+  saveNoteTimer = setTimeout(() => { note.hidden = true; }, 12000);
+  if (!result.ok) { S = await loadSettings(); draw(); }
+});
+
 // ---- opening and closing an app ----
 
 let shown = null; // the sheet on screen
@@ -362,6 +376,7 @@ $('handle').addEventListener('input', () => {
 });
 
 $('enabled').addEventListener('change', (e) => set({ enabled: e.target.checked }));
+
 $('settings').addEventListener('click', () => api.runtime.openOptionsPage());
 
 // ---- the tab, the clock ----
@@ -387,6 +402,18 @@ setInterval(tick, 10000);
 
 [S] = await Promise.all([loadSettings(), readTab(), loadStats()]);
 draw();
+// ---- the end date ----
+// If the day came while no page was open to notice, note it now.
+if (G.endPassed(S)) set(G.endPatch(S));
+// Said once: the note stays while this menu is open, and is already forgotten in the settings.
+if (S.ended) {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(S.ended) ? new Date(`${S.ended}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : '';
+  $('ended-text').textContent = day ? `No Wanted stopped hiding on ${day}, the day you set` : 'No Wanted stopped hiding on the day you set';
+  $('ended').hidden = false;
+  save({ ended: '' });
+  $('ended-on').addEventListener('click', () => { $('ended').hidden = true; set({ enabled: true, ended: '', endDate: '' }); });
+  $('ended-keep').addEventListener('click', () => { $('ended').hidden = true; });
+}
 onSettings((next) => {
   S = next;
   draw();

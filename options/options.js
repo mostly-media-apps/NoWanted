@@ -1,4 +1,4 @@
-import { api, G, loadSettings, save, onSettings, setSeg, bindSeg, number } from '../ui/ui.js';
+import { api, G, loadSettings, save, onSaved, saveNote, onSettings, setSeg, bindSeg, number } from '../ui/ui.js';
 import { readStats, resetStats, barList, weekBars, KIND_NAMES } from '../ui/stats.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +23,19 @@ function draw() {
   if (document.activeElement !== $('extra')) $('extra').value = S.extraTerms.join('\n');
   drawSources();
   drawSites();
+  drawEnd();
+}
+
+// ---- when to stop ----
+const longDay = (key) => new Date(`${key}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+function drawEnd() {
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  $('end-date').min = G.dayKey(tomorrow);
+  if (document.activeElement !== $('end-date')) $('end-date').value = S.endDate || '';
+  $('end-clear').hidden = !S.endDate;
+  $('end-note').textContent = S.endDate
+    ? `Hiding switches itself off on ${longDay(S.endDate)}, and the menu will say so`
+    : 'No date set. Hiding goes on until you switch it off';
 }
 
 function row(name, kind, control) {
@@ -99,6 +112,21 @@ function set(patch) {
   draw();
 }
 
+// A save that was cut short or refused is said at the bottom of the page. A
+// refused one stays until a save goes through; the page then shows what is
+// really stored.
+let noteTimer = 0;
+onSaved(async (result) => {
+  const text = saveNote(result);
+  const note = $('save-note');
+  clearTimeout(noteTimer);
+  if (!text) return void (note.hidden = true);
+  note.textContent = text;
+  note.hidden = false;
+  if (result.ok) noteTimer = setTimeout(() => { note.hidden = true; }, 12000);
+  else { S = await loadSettings(); draw(); }
+});
+
 $('enabled').addEventListener('change', (e) => set({ enabled: e.target.checked }));
 $('blur').addEventListener('input', (e) => {
   S.blur = Number(e.target.value);
@@ -114,6 +142,53 @@ bindSeg($('reveal'), (reveal) => set({ reveal }));
 bindSeg($('frame'), (frame) => set({ frame }));
 bindSeg($('tag'), (tag) => set({ tag }));
 $('badge').addEventListener('change', (e) => set({ badge: e.target.checked }));
+$('end-date').addEventListener('change', (e) => {
+  const v = e.target.value;
+  // A day that has come already would switch hiding off at once; that is what the button below is for.
+  if (v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v <= G.dayKey())) return drawEnd();
+  set({ endDate: v || '' });
+});
+$('end-clear').addEventListener('click', () => set({ endDate: '' }));
+$('finished').addEventListener('click', () => set({ enabled: false, endDate: '', ended: '' }));
+
+// ---- reports: what the right-click menu noted, kept in this browser ----
+async function readReports() {
+  const { reports } = await api.storage.local.get({ reports: [] });
+  return Array.isArray(reports) ? reports : [];
+}
+async function drawReports() {
+  const n = (await readReports()).length;
+  $('reports-count').textContent = n ? `${number(n)} ${n === 1 ? 'report' : 'reports'} saved in this browser` : 'No reports saved';
+  $('export-reports').disabled = !n;
+  $('clear-reports').disabled = !n;
+}
+$('export-reports').addEventListener('click', async () => {
+  const reports = await readReports();
+  if (!reports.length) return;
+  const file = { tool: 'nw-reports', version: 1, exported: G.dayKey(), extension: api.runtime.getManifest().version, reports };
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
+  link.download = `no-wanted-reports-${G.dayKey()}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+});
+let clearAsk = 0;
+$('clear-reports').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  if (!clearAsk) {
+    b.textContent = 'Delete all reports?';
+    clearAsk = setTimeout(() => { clearAsk = 0; b.textContent = 'Delete'; }, 3000);
+    return;
+  }
+  clearTimeout(clearAsk);
+  clearAsk = 0;
+  b.textContent = 'Delete';
+  await api.storage.local.set({ reports: [] });
+});
+api.storage.onChanged.addListener((changes, area) => area === 'local' && changes.reports && drawReports());
+drawReports();
 $('updates').addEventListener('change', (e) => set({ updates: e.target.checked }));
 
 // The date on the rules file in use, and the Support link when there is one.
@@ -133,9 +208,11 @@ let typing = 0;
 $('extra').addEventListener('input', (e) => {
   clearTimeout(typing);
   typing = setTimeout(() => {
-    const extraTerms = [...new Set(e.target.value.split('\n').map((t) => t.trim()).filter(Boolean))].slice(0, 200);
+    // At most 200 words, and no more than the browser's storage holds. Anything left out is said, not dropped in silence.
+    const typed = [...new Set(e.target.value.split('\n').map((t) => t.trim()).filter(Boolean))];
+    const extraTerms = typed.slice(0, 200);
     S.extraTerms = extraTerms;
-    save({ extraTerms });
+    save({ extraTerms }, typed.length - extraTerms.length);
   }, 400);
 });
 
@@ -218,4 +295,6 @@ onSettings((next) => {
   S = next;
   draw();
 });
+// The end date came while no page was open to notice: note it now.
+if (G.endPassed(S)) set(G.endPatch(S));
 draw();

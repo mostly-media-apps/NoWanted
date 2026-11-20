@@ -66,7 +66,7 @@
   // its links carry the words that were searched for, and a hidden puzzle
   // tile cannot be solved.
   const ROBOT_CHECK = '[id*="captcha" i],[class*="captcha" i],[data-testid*="captcha" i],[id^="anomaly-modal"],[data-testid^="anomaly-modal"]';
-  const SKIP_SEL = `script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask,${ROBOT_CHECK}`;
+  const SKIP_SEL = `script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask,#gsb-say,${ROBOT_CHECK}`;
   const INLINE = new Set(['A', 'SPAN', 'B', 'I', 'EM', 'STRONG', 'MARK', 'SMALL', 'CODE', 'U', 'S', 'SUP', 'SUB', 'FONT', 'LABEL', 'TIME', 'ABBR', 'CITE', 'Q', 'BDI', 'BDO', 'YT-FORMATTED-STRING', 'YT-ATTRIBUTED-STRING']);
   const WALL = new Set(['BODY', 'HTML', 'MAIN', 'NAV', 'HEADER', 'FOOTER', 'FORM', 'ASIDE']);
   const CARD_TAG = new Set(['ARTICLE', 'LI', 'TR', 'FIGURE', 'BLOCKQUOTE', 'DD', 'P']);
@@ -750,6 +750,8 @@
     el = frameable(el);
     if (asMedia) mediaBoxes.add(el);
     if (stateOf(el)) return; // already hidden, or shown by the person
+    // The person said this exact item is not a spoiler, on this visit or an earlier one.
+    if (shown.size && !byHand.has(el) && shown.has(fingerprint(el))) return void el.setAttribute('data-gsb', '0');
     // An ancestor already decides, also from outside a shadow root.
     if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) return;
     for (const inner of el.querySelectorAll(HIDDEN)) clear(inner);
@@ -1186,7 +1188,7 @@
     // Nothing in it names the game any more: the site reused the element for
     // something else. A picture boxed on a page shown anyway never did, and
     // stays boxed for as long as the page is in that state.
-    if (collect(el, []).length === 0 && !(pageAbout && mediaBoxes.has(el))) clear(el);
+    if (collect(el, []).length === 0 && !(pageAbout && mediaBoxes.has(el)) && !byHand.has(el)) clear(el);
     else {
       if (el.getAttribute('data-gsb') !== '3') markParts(el);
       markLive(el);
@@ -1203,7 +1205,7 @@
   // Media is stopped inside a hidden item, unless the item is allowed and the
   // pointer is on the piece that holds it.
   function isHidden(node) {
-    if (pageOn) return true;
+    if (pageOn || topCover) return true;
     let onPart = false;
     for (let n = node; n; n = n.parentNode || n.host) {
       if (n.nodeType !== 1) continue;
@@ -1236,7 +1238,7 @@
   }
 
   function gate(m) {
-    if (active && S.muteMedia && isHidden(m)) {
+    if ((active || topCover) && S.muteMedia && isHidden(m)) {
       if (!gated.has(m)) gated.set(m, m.muted);
       if (!m.hasAttribute(HOLD)) m.setAttribute(HOLD, '');
       if (!m.muted) m.muted = true;
@@ -1313,6 +1315,12 @@
       const path = e.composedPath();
       if (!path.includes(bubble.host) && !path.includes(asking)) stopAsking(asking);
     }
+    // A press outside the panel that asks why takes it away.
+    if (panel && !panel.host.hidden && e.type === 'pointerdown' && !e.composedPath().includes(panel.host)) hidePanel();
+    // The browser's own menu opens on hidden items too: "This is not a
+    // spoiler" lives there. What is under the pointer is noted for it.
+    if (e.type === 'contextmenu' || ((e.type === 'pointerdown' || e.type === 'mousedown') && e.button === 2)) noteMenuTarget(e);
+    if (e.type === 'contextmenu') return;
     const el = hiddenInPath(e);
     if (!el) {
       if (e.type === 'click') noteAllowedClick(e);
@@ -1386,6 +1394,332 @@
     if (S.reveal === 'click') press(el, null);
   }
 
+  // ---------- the right-click menu ----------
+  // "Hide this with No Wanted" on something that is not hidden, "This is not a
+  // spoiler" on something that is. Each use is filed as a report that stays in
+  // this browser: what the thing is by structure, never its words or address.
+
+  let menuTarget = null; // { el, hidden } under the last right-click
+  function noteMenuTarget(e) {
+    const path = e.composedPath();
+    if ((bubble && path.includes(bubble.host)) || (panel && path.includes(panel.host))) return;
+    const el = path.find((n) => n.nodeType === 1);
+    if (!el) return;
+    const hidden = path.find((n) => n.nodeType === 1 && isHiddenState(n.getAttribute('data-gsb'))) || null;
+    menuTarget = { el, hidden };
+    send({ type: 'menuTarget', hidden: !!hidden });
+  }
+
+  // The menu has one entry, and what it does is decided here, from what was
+  // under the pointer: the background cannot know that in time.
+  function menuAction() {
+    const t = menuTarget;
+    if (!t?.el?.isConnected) return;
+    // Looked at again now: the item may have been hidden or shown since the right-click.
+    let hidden = null;
+    for (let n = t.el; n; n = n.parentElement || (n.getRootNode() instanceof ShadowRoot ? n.getRootNode().host : null)) {
+      if (isHiddenState(n.getAttribute('data-gsb'))) { hidden = n; break; }
+    }
+    if (hidden) notASpoiler(hidden);
+    else hideByHand(t.el);
+  }
+
+  // Hidden because the person said so. It names nothing the matcher knows, so
+  // a recheck must not clear it. It lasts until the page is loaded again.
+  const byHand = new WeakSet();
+  function hideByHand(el) {
+    const card = frameable(pickTarget(el) || lineOf(el, null) || el);
+    if (stateOf(card) === '0') card.removeAttribute('data-gsb');
+    byHand.add(card);
+    blur(card);
+    if (!isHiddenState(stateOf(card))) return; // something around it is hidden already
+    say(card, 'miss', fileReport('miss', card, 'by hand', stateOf(card)));
+  }
+
+  // Shown because the person said it is not a spoiler. That exact item stays
+  // shown, on this visit and the next: what is kept is a fingerprint of it.
+  function notASpoiler(el) {
+    const id = fileReport('overblock', el, howHidden(el), stateOf(el));
+    remember(fingerprint(el));
+    byHand.delete(el);
+    clear(el);
+    el.setAttribute('data-gsb', '0');
+    report();
+    say(el, 'overblock', id);
+  }
+
+  // A short number that stands for an item's words on this site. The words
+  // cannot be read back out of it.
+  // What it is made from, in order: the item's own address when it has one
+  // (a post's, a video's), since that never changes; otherwise its words,
+  // without the parts a feed keeps changing (how long ago, how many views).
+  const ITEM_ID = [
+    // A comment's own id comes first: its link also carries its video's or thread's id, which every comment there shares.
+    /[?&]lc=([\w.-]{6,})/, /\/comments\/[a-z0-9]+\/[^/]*\/([a-z0-9]{4,})/,
+    /\/status(?:es)?\/(\d{5,})/, /[?&]v=([\w-]{6,})/, /\/shorts\/([\w-]{6,})/, /\/comments\/([a-z0-9]{4,})/, /\/video\/(\d{6,})/,
+    /\/(?:p|reel|reels)\/([\w-]{6,})/, /\/posts?\/([\w-]{6,})/, /[?&](?:id|story_fbid|p)=([\w-]{4,})/,
+  ];
+  function idOfItem(el) {
+    for (const name of ['post-id', 'data-post-id', 'data-video-id', 'data-item-id', 'data-fullname', 'permalink']) {
+      const v = el.getAttribute(name);
+      if (v && v.length >= 4 && v.length <= 200) return `${name}=${v}`;
+    }
+    const links = el.matches('a[href]') ? [el] : [];
+    for (const a of el.querySelectorAll('a[href]')) { links.push(a); if (links.length > 40) break; }
+    for (const a of links) {
+      const href = a.getAttribute('href') || '';
+      for (const re of ITEM_ID) {
+        const m = re.exec(href);
+        if (m) return `id=${m[1]}`;
+      }
+    }
+    // A headline that is a link to the item's own page.
+    const head = el.querySelector('h1 a[href], h2 a[href], h3 a[href], h4 a[href]');
+    if (head) {
+      try {
+        const u = new URL(head.href, location.href);
+        if (u.pathname.length > 1) return `at=${u.host}${u.pathname}`;
+      } catch {
+        // not an address
+      }
+    }
+    return '';
+  }
+  const CHANGING = /\b(?:\d[\d.,:]*\s*[kmb]?\+?|an?|just now|yesterday|today|ago|edited|views?|likes?|comments?|repl(?:y|ies)|reposts?|shares?|points?|upvotes?|votes?|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?|months?|mos?|years?|yrs?|[smhdwy])\b/g;
+  function fingerprint(el) {
+    let text = idOfItem(el);
+    if (!text) text = (el.textContent || '').toLowerCase().replace(/\d[\d.,:]*[kmb]?/g, ' ').replace(CHANGING, ' ').replace(/[^\p{L}]+/gu, ' ').trim().slice(0, 600);
+    if (!text) text = [...el.querySelectorAll('img')].map((m) => m.getAttribute('alt') || m.currentSrc || m.src || '').join(' ');
+    text = site + '|' + text;
+    let a = 0x811c9dc5, b = 0x01000193;
+    for (let i = 0; i < text.length; i++) {
+      a = Math.imul(a ^ text.charCodeAt(i), 0x01000193);
+      b = Math.imul(b + text.charCodeAt(i), 0x85ebca6b) ^ (b >>> 13);
+    }
+    return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
+  }
+  const SHOWN_MAX = 300;
+  let shown = new Set(); // fingerprints of items the person said are not spoilers
+  function remember(print) {
+    shown.add(print);
+    const list = [...shown].slice(-SHOWN_MAX);
+    shown = new Set(list);
+    api.storage.local.set({ shown: list }).catch(() => {});
+  }
+  function loadShown() {
+    api.storage.local.get({ shown: [] }).then((v) => {
+      shown = new Set(Array.isArray(v.shown) ? v.shown : []);
+      if (!shown.size) return;
+      // Anything hidden before the list arrived is put right.
+      for (const el of [...blurred]) {
+        if (!byHand.has(el) && shown.has(fingerprint(el))) {
+          clear(el);
+          el.setAttribute('data-gsb', '0');
+        }
+      }
+      report();
+    }, () => {});
+  }
+
+  // ---- reports ----
+
+  // Which part of the extension hid it.
+  function howHidden(el) {
+    if (byHand.has(el)) return 'by hand';
+    if (mediaBoxes.has(el)) return 'picture on a page shown anyway';
+    if (el.hasAttribute('data-gsb-thru')) return 'site notes: one line of a row';
+    if (adapter && el.matches(adapter.cards)) return 'site notes: card';
+    return adapter ? 'site notes: outside a card' : 'general rules';
+  }
+
+  // The same short path the judge files: tags, roles and class names, five
+  // levels. No ids, no addresses, no text.
+  const safeName = (v) => (/^[A-Za-z_-][\w-]{0,39}$/.test(v) ? v : '');
+  function pathOf(el) {
+    const parts = [];
+    for (let n = el; n && n.nodeType === 1 && parts.length < 5 && n !== document.body; n = n.parentElement) {
+      let s = n.tagName.toLowerCase();
+      const role = n.getAttribute('role');
+      if (role && /^[a-z]{1,24}$/.test(role)) s += `[role=${role}]`;
+      const classes = [...n.classList].map(safeName).filter(Boolean).slice(0, 2);
+      if (classes.length) s += '.' + classes.join('.');
+      parts.unshift(s);
+    }
+    return parts.join(' > ');
+  }
+  const REPORT_CHROME = 'nav,header,footer,aside,menu,[role="navigation"],[role="banner"],[role="contentinfo"],[role="complementary"],[role="menu"],[role="menubar"],[role="tablist"],[role="toolbar"]';
+  function featuresOf(el) {
+    const text = (el.textContent || '').trim();
+    const around = el.closest(REPORT_CHROME); // the site's own menu, header or footer, if it sits in one
+    return {
+      tag: el.tagName.toLowerCase(),
+      role: /^[a-z]{1,24}$/.test(el.getAttribute('role') || '') ? el.getAttribute('role') : null,
+      words: text ? text.split(/\s+/).length : 0,
+      links: el.querySelectorAll('a[href]').length + (el.matches('a[href]') ? 1 : 0),
+      media: el.querySelectorAll('img,video,picture,canvas,iframe').length + (el.matches('img,video,picture,canvas,iframe') ? 1 : 0),
+      chrome: around ? (around.getAttribute('role') || around.tagName.toLowerCase()) : null,
+      control: !!el.closest('button,[role="button"],input,textarea,select,label') || el.querySelectorAll('input,textarea,select').length > 0,
+      table: !!el.closest('td,th,tr,[role="cell"],[role="row"]'),
+      heading: el.matches('h1,h2,h3,h4,h5,h6,[role="heading"]'),
+    };
+  }
+
+  const REPORTS_MAX = 200;
+  let filing = Promise.resolve();
+  const editReports = (change) => {
+    filing = filing.then(async () => {
+      const { reports } = await api.storage.local.get({ reports: [] });
+      const list = Array.isArray(reports) ? reports : [];
+      change(list);
+      await api.storage.local.set({ reports: list.slice(-REPORTS_MAX) });
+    }).catch(() => {});
+  };
+  function fileReport(type, el, rule, state) {
+    const box = el.getBoundingClientRect();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const record = {
+      id, tool: 'nw-report', version: 1,
+      type, // "miss": the person hid it. "overblock": the person said it is not a spoiler
+      source: 'person',
+      kind: null, // the reason, if one is picked
+      page: site, // the site's name only
+      date: G.dayKey(),
+      state: state || null,
+      rule,
+      adapter: adapter ? `${site} (site notes)` : 'general rules',
+      path: pathOf(el),
+      box: { w: Math.round(box.width), h: Math.round(box.height) },
+      features: featuresOf(el),
+      extension: (() => { try { return api.runtime.getManifest().version; } catch { return ''; } })(),
+    };
+    editReports((list) => list.push(record));
+    return id;
+  }
+  const setReason = (id, kind) => editReports((list) => {
+    const r = list.find((x) => x.id === id);
+    if (r) r.kind = kind;
+  });
+
+  // ---- the small panel that asks why ----
+
+  const REASONS = {
+    miss: ['Names the game', 'A picture of it', 'A video', 'Other'],
+    overblock: ['Not about the game', 'Site menu or button', 'My own work', 'Other'],
+  };
+  const SAY_MS = 12000; // left alone this long, it goes away
+  let panel = null; // { host, box, title, ask, list, more, timer, id, for }
+
+  // Who posted it, as something the always-blur list takes: an account's or a
+  // community's page on this site, or another site the link goes to.
+  function sourceOf(card) {
+    const sels = [adapter?.keep, adapter?.by, GENERIC_BY].filter(Boolean).join(',');
+    for (const el of card.querySelectorAll(sels)) {
+      const a = el.closest('a[href]') || el.querySelector('a[href]');
+      const p = a && /^https?:/.test(a.href) ? G.parseSource(a.href) : null;
+      if (!p || p.kind !== 'site') continue;
+      if (p.host === site && (!p.path || p.path.split('/').filter(Boolean).length > 2)) continue;
+      const name = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 32) || p.value;
+      return { value: p.value, name };
+    }
+    return null;
+  }
+
+  function buildPanel() {
+    const host = document.createElement('div');
+    host.id = 'gsb-say';
+    const shadow = host.attachShadow({ mode: 'closed' });
+    shadow.innerHTML = `
+      <style>
+        :host { all: initial; position: fixed; z-index: 2147483647; left: 0; top: 0; }
+        :host([hidden]) { display: none; }
+        .p {
+          box-sizing: border-box; width: 240px; padding: 12px; border-radius: 12px; background: rgba(22, 12, 28, 0.96);
+          box-shadow: 0 0 0 1px rgba(237, 237, 237, 0.12), 0 12px 32px rgba(0, 0, 0, 0.4);
+          font: 400 13px/20px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #ffffff;
+          opacity: 0; transform: translateY(4px);
+          transition: opacity 0.12s cubic-bezier(0.22, 1, 0.36, 1), transform 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .p.on { opacity: 1; transform: none; transition-duration: 0.16s; }
+        .t { font-weight: 600; }
+        .q { color: #b9b3c2; }
+        .list { display: grid; gap: 4px; margin-top: 8px; }
+        button {
+          all: unset; box-sizing: border-box; height: 32px; padding: 0 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          background: rgba(237, 237, 237, 0.08); color: #ffffff; font: 400 13px/32px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+          transition: background-color 0.08s cubic-bezier(0.22, 1, 0.36, 1), transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        button:hover { background: rgba(237, 237, 237, 0.16); }
+        button:active { transform: scale(0.98); }
+        button:focus-visible { outline: 2px solid #ff5aa8; outline-offset: 2px; }
+        .more { display: block; width: 100%; margin-top: 8px; background: #ededed; color: #171717; font-weight: 600; line-height: 32px; text-align: center; }
+        .more:hover { background: #ffffff; }
+        .more[hidden] { display: none; }
+        @media (prefers-reduced-motion: reduce) { .p { transform: none; } button { transition: none; } }
+      </style>
+      <div class="p" role="dialog" aria-labelledby="t"><div class="t" id="t"></div><div class="q"></div><div class="list"></div><button type="button" class="more" hidden></button></div>`;
+    const box = shadow.querySelector('.p');
+    const p = { host, box, title: shadow.querySelector('.t'), ask: shadow.querySelector('.q'), list: shadow.querySelector('.list'), more: shadow.querySelector('.more'), timer: 0, id: null, source: null };
+    p.list.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      setReason(p.id, b.dataset.reason);
+      hidePanel();
+    });
+    p.more.addEventListener('click', () => {
+      if (p.source && !S.sources.includes(p.source.value)) api.storage.sync.set({ sources: [...S.sources, p.source.value] }).catch(() => {});
+      hidePanel();
+    });
+    // The page never hears about clicks and keys in the panel.
+    for (const type of ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu', 'keyup']) {
+      host.addEventListener(type, (e) => e.stopPropagation());
+    }
+    host.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') hidePanel();
+    });
+    host.addEventListener('pointerenter', () => clearTimeout(p.timer));
+    host.addEventListener('pointerleave', () => { p.timer = setTimeout(hidePanel, SAY_MS); });
+    return p;
+  }
+
+  function say(el, type, id) {
+    if (!panel) panel = buildPanel();
+    const p = panel;
+    clearTimeout(p.timer);
+    p.id = id;
+    p.title.textContent = type === 'miss' ? 'Hidden until this page reloads' : 'Shown, and it stays shown';
+    p.ask.textContent = type === 'miss' ? 'What gave it away? You can skip this' : 'Why was it hidden wrongly? You can skip this';
+    p.list.replaceChildren(...REASONS[type].map((name) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = name;
+      b.dataset.reason = name.toLowerCase();
+      return b;
+    }));
+    p.source = type === 'miss' ? sourceOf(el) : null;
+    p.more.hidden = !p.source;
+    if (p.source) p.more.textContent = `Always hide posts from ${p.source.name}`;
+    if (!p.host.isConnected) root.appendChild(p.host);
+    p.host.hidden = false;
+    // Beside the item's top left corner, kept on screen.
+    const r = el.getBoundingClientRect();
+    const h = p.box.offsetHeight || 140;
+    const x = Math.max(8, Math.min(r.left + 8, innerWidth - 240 - 8));
+    const y = Math.max(8, Math.min(r.top + 8, innerHeight - h - 8));
+    p.host.style.setProperty('transform', `translate(${Math.round(x)}px, ${Math.round(y)}px)`, 'important');
+    requestAnimationFrame(() => p.box.classList.add('on'));
+    p.list.firstElementChild?.focus({ preventScroll: true });
+    p.timer = setTimeout(hidePanel, SAY_MS);
+  }
+
+  function hidePanel() {
+    if (!panel) return;
+    clearTimeout(panel.timer);
+    panel.box.classList.remove('on');
+    panel.host.hidden = true;
+    panel.id = null;
+  }
+
   // ---------- whole pages ----------
 
   let veil = null;
@@ -1451,7 +1785,29 @@
     if (!veil.isConnected) root.appendChild(veil);
     maskTitle();
     gateAll(document);
+    tellFrames();
     report();
+  }
+
+  // A frame inside a covered page (an embedded player from another site)
+  // cannot see the cover. The page tells the background, which tells every
+  // frame of the tab; a frame that loads later asks for itself.
+  let topCover = false; // in a frame: the page this frame sits in is covered
+  function tellFrames() {
+    if (isTop) send({ type: 'cover', on: pageOn });
+  }
+  function onCover(on) {
+    if (isTop || topCover === !!on) return;
+    topCover = !!on;
+    gateAll(document);
+  }
+  function askCover() {
+    if (isTop) return;
+    try {
+      api.runtime.sendMessage({ type: 'coverAsk' }).then((on) => onCover(on), () => {});
+    } catch {
+      // no extension context
+    }
   }
 
   function uncoverPage() {
@@ -1462,6 +1818,7 @@
       realTitle = null;
     }
     gateAll(document);
+    tellFrames();
     report();
   }
 
@@ -1597,20 +1954,33 @@
     else send({ type: 'closeTab' });
   }
 
-  // The cover's display type, loaded once from the extension.
+  // The cover's artwork and display type, fetched once by the background in the
+  // extension's own origin so no chrome-extension:// URL is ever loaded by a page.
   let fontAdded = false;
-  function addFont() {
-    if (fontAdded || typeof FontFace !== 'function') return;
+  let veilAssets = null;
+  function getVeilAssets() {
+    if (!veilAssets) {
+      veilAssets = Promise.resolve().then(() => api.runtime.sendMessage({ type: 'veilAssets' })).catch(() => {
+        veilAssets = null;
+        return null;
+      });
+    }
+    return veilAssets;
+  }
+  function addFont(b64) {
+    if (fontAdded || !b64 || typeof FontFace !== 'function') return;
     fontAdded = true;
     try {
-      const face = new FontFace('Nowanted Display', `url(${api.runtime.getURL('fonts/anton-latin-400-normal.woff2')})`);
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const face = new FontFace('Nowanted Display', bytes);
       document.fonts.add(face);
       face.load().catch(() => {});
     } catch {}
   }
 
   function buildVeil() {
-    addFont();
     const host = document.createElement('div');
     host.id = 'gsb-veil';
     host.style.cssText = 'all:initial!important;position:fixed!important;inset:0!important;z-index:2147483647!important;display:block!important;';
@@ -1630,8 +2000,8 @@
           background: #161020; border: 1px solid rgba(237, 237, 237, 0.1); border-radius: 16px;
           box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
         }
-        .art { position: relative; height: 120px; overflow: hidden; }
-        .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 76%; }
+        .art { position: relative; height: 120px; overflow: hidden; background: linear-gradient(#2f0f52, #8c2471 58%, #ff4f7b 85%, #ff8a3d); }
+        .art svg { position: absolute; left: 0; top: 76%; width: 100%; height: auto; aspect-ratio: 16 / 9; transform: translateY(-76%); display: block; pointer-events: none; }
         .art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(22, 16, 32, 0) 30%, rgba(22, 16, 32, 0.85)); }
         h2 {
           position: absolute; left: 24px; right: 24px; bottom: 12px; z-index: 1; margin: 0;
@@ -1662,7 +2032,7 @@
       </style>
       <div class="scrim">
         <div class="panel" role="dialog" aria-labelledby="t">
-          <div class="art"><img alt=""><h2 id="t">Spoilers ahead</h2></div>
+          <div class="art"><h2 id="t">Spoilers ahead</h2></div>
           <div class="body">
             <p></p>
             <div class="row">
@@ -1672,7 +2042,21 @@
           </div>
         </div>
       </div>`;
-    shadow.querySelector('.art img').src = api.runtime.getURL('art/scene.svg');
+    getVeilAssets().then((assets) => {
+      if (!assets) return;
+      addFont(assets.font);
+      const art = shadow.querySelector('.art');
+      if (assets.svg && art && !art.querySelector('svg')) {
+        try {
+          const doc = new DOMParser().parseFromString(assets.svg, 'image/svg+xml');
+          const svg = doc.documentElement;
+          if (svg && svg.tagName.toLowerCase() === 'svg') {
+            svg.setAttribute('aria-hidden', 'true');
+            art.prepend(document.importNode(svg, true));
+          }
+        } catch {}
+      }
+    });
     const back = shadow.querySelector('.back');
     const show = shadow.querySelector('.show');
     back.textContent = history.length > 1 ? 'Go back' : 'Close tab';
@@ -1754,7 +2138,7 @@
     }
     for (const el of fresh) {
       if (!el.isConnected) continue;
-      if (pageOn) gateAll(el); // a player added under the page cover
+      if (pageOn || topCover) gateAll(el); // a player added under the page cover
       const found = scan(el);
       // A small piece ("6", "GTA") may finish a match that starts next to it.
       const parent = el.parentElement;
@@ -1842,7 +2226,11 @@
     // An allowed site covers its subdomains too: allowing github.com also
     // leaves gist.github.com and docs.github.com alone.
     const listed = (list) => !!list?.some((h) => site === h || site.endsWith('.' + h));
-    active = S.enabled && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
+    // "Stop hiding on": from that day on nothing is hidden. One page writes it
+    // down (hiding off, the date cleared), so the menu can say so once.
+    const over = G.endPassed(S);
+    if (over && S.enabled && isTop) api.storage.sync.set(G.endPatch(S)).catch(() => {});
+    active = S.enabled && !over && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
     look();
     root.toggleAttribute('data-gsb-locked', S.reveal === 'locked');
     quiet();
@@ -1890,6 +2278,8 @@
     checkPage();
     scan(root);
     report();
+    loadShown();
+    askCover();
 
     try {
       api.storage.sync.get(G.DEFAULTS).then(apply, () => {});
@@ -1905,6 +2295,9 @@
       });
       api.runtime.onMessage.addListener((msg, _sender, respond) => {
         if (msg?.type === 'count' && isTop) respond({ n: currentCount(), active, site });
+        if (msg?.type === 'menuAction') menuAction();
+        if (msg?.type === 'cover') onCover(msg.on);
+        if (msg?.type === 'coverQuery' && isTop) respond({ on: pageOn });
       });
     } catch {
       // no extension context (reloaded); keep working with the defaults
