@@ -2,6 +2,8 @@
   <img src="docs/hero.jpg" alt="Spoilers: No Wanted. Play it before you see it, over a sunset on the Vice City coast" width="100%">
 </p>
 
+<h1 align="center">No Wanted: GTA 6 spoiler blocker</h1>
+
 <p align="center">
   <b>Play GTA 6 before you see it.</b><br>
   A browser extension that blurs GTA 6 spoilers on every site, so you can stay online until you've played it.
@@ -21,6 +23,7 @@
   <a href="#what-it-does">What it does</a> &nbsp;·&nbsp;
   <a href="#privacy">Privacy</a> &nbsp;·&nbsp;
   <a href="#support">Support</a> &nbsp;·&nbsp;
+  <a href="https://nowanted.online/avoid-gta-6-spoilers/">Spoiler guides</a> &nbsp;·&nbsp;
   <a href="https://nowanted.online">nowanted.online</a>
 </p>
 
@@ -96,7 +99,7 @@ No Wanted works inside your browser. It has no account, no analytics and no ads,
 - Once a day it downloads one small rules file from nowanted.online with new words and accounts to catch, sites to leave alone and fixes for sites that changed. It's data only, nothing in it runs as code, and the request carries nothing about you. You can switch it off in Settings
 - Your stats stay on your computer. Removing the extension removes everything it saved
 
-The full policy is at [nowanted.online/privacy](https://nowanted.online/privacy.html).
+The full policy is at [nowanted.online/privacy](https://nowanted.online/privacy).
 
 <details>
 <summary><b>What it can't catch</b></summary>
