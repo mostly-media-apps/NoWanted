@@ -1,4 +1,5 @@
 /* Written from style.js by scripts/css.mjs. Edit style.js, not this file. */
+:root:not(#_a#_b) { --gsb-css: 1 !important; }
 [data-gsb="1"]:not(#_a#_b) [data-gsb-part],
 [data-gsb="2"]:not(#_a#_b) [data-gsb-part] {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;

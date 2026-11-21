@@ -182,24 +182,82 @@
   // ---------- shadow DOM ----------
 
   const watchedRoots = new WeakSet();
-  // Our styles do not reach into a shadow root, so each one gets its own copy.
-  // A site that fills its root in one go (innerHTML) throws that copy away
-  // with everything else, so it is put back whenever it is missing.
+  const styledRoots = new WeakSet();
+  let shadowSeen = false;
+  let sharedSheet = null;
+  function getSharedSheet() {
+    if (sharedSheet !== null) return sharedSheet;
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(G.CSS);
+      sharedSheet = sheet;
+    } catch {
+      sharedSheet = false;
+    }
+    return sharedSheet;
+  }
+  // Safari occasionally never applies the manifest content stylesheet on pages
+  // that build shadow roots and insert DOM from an inline script during parsing.
+  // Check once after the first flush that hides something (and repeat on the
+  // next few flushes until it passes), adopting the shared constructable sheet
+  // on document — or falling back to a <style> in <head> — if it is missing.
+  let docStyleOk = false;
+  let docStyleChecks = 0;
+  function ensureDocStyle() {
+    if (docStyleOk || docStyleChecks >= 5) return;
+    docStyleChecks++;
+    if (getComputedStyle(root).getPropertyValue('--gsb-css').trim() === '1') {
+      docStyleOk = true;
+      return;
+    }
+    const sheet = getSharedSheet();
+    if (sheet && Array.isArray(document.adoptedStyleSheets) && !document.adoptedStyleSheets.includes(sheet)) {
+      try {
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+        return;
+      } catch {}
+    }
+    if (!document.querySelector('style[data-gsb-style]')) {
+      const style = document.createElement('style');
+      style.setAttribute('data-gsb-style', '');
+      style.textContent = G.CSS;
+      (document.head || root).appendChild(style);
+    }
+  }
+  // Our styles do not reach into a shadow root, so any root that holds a
+  // hidden item shares one parsed CSSStyleSheet via adoptedStyleSheets (with a
+  // <style> fallback for environments without constructable stylesheets).
   function styleShadow(shadow) {
+    styledRoots.add(shadow);
+    const sheet = getSharedSheet();
+    if (sheet && Array.isArray(shadow.adoptedStyleSheets)) {
+      if (!shadow.adoptedStyleSheets.includes(sheet)) {
+        try {
+          shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+          return;
+        } catch {}
+      } else {
+        return;
+      }
+    }
     for (const c of shadow.children) if (c.tagName === 'STYLE' && c.hasAttribute('data-gsb-style')) return;
     const style = document.createElement('style');
     style.setAttribute('data-gsb-style', '');
     style.textContent = G.CSS;
     shadow.appendChild(style);
   }
+  function ensureShadowStyle(el) {
+    const r = el.getRootNode();
+    if (r instanceof ShadowRoot) styleShadow(r);
+  }
 
   function scanShadow(shadow, out) {
+    shadowSeen = true;
     if (!watchedRoots.has(shadow)) {
       watchedRoots.add(shadow);
       observer.observe(shadow, OBSERVE);
       listenMedia(shadow);
     }
-    styleShadow(shadow);
     for (const c of shadow.children) collect(c, out);
   }
 
@@ -210,7 +268,7 @@
     if (!active || !host?.shadowRoot || watchedRoots.has(host.shadowRoot)) return;
     const found = [];
     scanShadow(host.shadowRoot, found);
-    for (const m of found) flag(m);
+    if (found.length) withBatch(() => { for (const m of found) flag(m); });
   }
 
   function findShadows(node, out) {
@@ -356,41 +414,68 @@
   // right, and optionally which cards it holds for).
   const fixedTag = (el) => !!adapter?.tag && (!adapter.tag[2] || el.matches(adapter.tag[2]));
 
-  // "1" a framed box with a label, "2" no box of its own, "3" small or bare text.
-  function modeFor(el) {
-    if (!el.isConnected) return '1';
+  // Pure read pass for modeFor so a batch of cards can all measure before any
+  // DOM write invalidates layout.
+  function measureMode(el, around) {
+    if (!el.isConnected) return { mode: '1', rel: false, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: false, size: '0x0' };
     const cs = getComputedStyle(el);
-    if (cs.display === 'contents') return '2';
-    // The frame is drawn on the element, so it needs to be positioned.
-    if (cs.position === 'static') el.setAttribute('data-gsb-rel', '');
-    if (cs.display === 'inline') return '3';
-    if (REPLACED.has(el.tagName) || !el.firstElementChild) return '3';
+    if (cs.display === 'contents') return { mode: '2', rel: false, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: false, size: '0x0' };
+    const rel = cs.position === 'static';
+    if (cs.display === 'inline') return { mode: '3', rel, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: false, size: '0x0' };
+    if (REPLACED.has(el.tagName) || !el.firstElementChild) {
+      const box = el.getBoundingClientRect();
+      return { mode: '3', rel, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: fitSmallRead(el, cs, box), size: `${Math.round(box.width)}x${Math.round(box.height)}` };
+    }
     for (const n of el.childNodes) {
-      if (n.nodeType === 3 && n.nodeValue.trim()) return '3'; // bare text: blurred with its element
+      if (n.nodeType === 3 && n.nodeValue.trim()) {
+        const box = el.getBoundingClientRect();
+        return { mode: '3', rel, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: fitSmallRead(el, cs, box), size: `${Math.round(box.width)}x${Math.round(box.height)}` };
+      }
     }
     const box = el.getBoundingClientRect();
+    const size = `${Math.round(box.width)}x${Math.round(box.height)}`;
     // A tile that holds a picture is a card with a label even when it is
     // narrow (a profile grid); anything else this small is blurred as it is.
     const tile = box.width >= 96 && box.height >= 96 && !!el.querySelector(PART_MEDIA);
-    if (box.width && (box.width < 160 || (box.height && box.height < 48)) && !tile) return '3';
+    if (box.width && (box.width < 160 || (box.height && box.height < 48)) && !tile) {
+      return { mode: '3', rel, ask: null, frame: null, fixed: false, keeps: [], by: '', smallTight: fitSmallRead(el, cs, box), size };
+    }
     // Room for the question: the panel with its button needs 192 by 88, the
     // button alone 168 across, and a narrower card asks in the bubble.
-    if (box.width && box.width < 168) el.setAttribute('data-gsb-b', '');
-    else if (box.height && (box.height < 88 || box.width < 192)) el.setAttribute('data-gsb-sm', '');
-    const around = [];
-    const [inset, radius] = frameFor(el, cs, box, around);
-    el.style.setProperty('--gsb-in', inset);
-    el.style.setProperty('--gsb-r', radius);
-    for (const n of around) reframe(n);
-    if (fixedTag(el)) {
+    const ask = box.width && box.width < 168 ? 'b' : (box.height && (box.height < 88 || box.width < 192) ? 'sm' : null);
+    const frame = frameFor(el, cs, box, around);
+    const fixed = fixedTag(el);
+    const keeps = findKeep(el);
+    const by = !keeps.length && (!box.height || box.height >= 72) ? bylineOf(el) : '';
+    return { mode: '1', rel, ask, frame, fixed, keeps, by, smallTight: false, size };
+  }
+
+  function applyMode(el, plan) {
+    if (plan.rel) el.setAttribute('data-gsb-rel', '');
+    if (plan.ask === 'b') el.setAttribute('data-gsb-b', '');
+    else if (plan.ask === 'sm') el.setAttribute('data-gsb-sm', '');
+    if (plan.frame) {
+      el.style.setProperty('--gsb-in', plan.frame[0]);
+      el.style.setProperty('--gsb-r', plan.frame[1]);
+    } else if (plan.smallTight) {
+      el.style.setProperty('--gsb-in', '0px');
+    }
+    if (plan.fixed) {
       el.style.setProperty('--gsb-tag-y', adapter.tag[0] + 'px');
       el.style.setProperty('--gsb-tag-x', adapter.tag[1] + 'px');
     }
-    if (!markKeep(el) && (!box.height || box.height >= 72)) {
-      const by = bylineOf(el);
-      if (by) el.setAttribute('data-gsb-by', by);
-    }
-    return '1';
+    for (const k of plan.keeps) k.setAttribute('data-gsb-keep', '');
+    if (plan.by) el.setAttribute('data-gsb-by', plan.by);
+    return plan.mode;
+  }
+
+  // "1" a framed box with a label, "2" no box of its own, "3" small or bare text.
+  function modeFor(el) {
+    const around = [];
+    const plan = measureMode(el, around);
+    applyMode(el, plan);
+    for (const n of around) reframe(n);
+    return plan.mode;
   }
 
   // Does this element cut off what is drawn outside its box?
@@ -562,11 +647,18 @@
   // Sites add the cards of a list one after another, so a card is often
   // hidden before the next one exists. When that one is hidden too, the frame
   // of the card before it is worked out again, now with its neighbour there.
-  function reframe(el) {
-    if (!el.isConnected || el.getAttribute('data-gsb') !== '1') return;
-    const [inset, radius] = frameFor(el, getComputedStyle(el), el.getBoundingClientRect());
+  function measureReframe(el) {
+    if (!el.isConnected || el.getAttribute('data-gsb') !== '1') return null;
+    return frameFor(el, getComputedStyle(el), el.getBoundingClientRect());
+  }
+  function applyReframe(el, frame) {
+    if (!frame) return;
+    const [inset, radius] = frame;
     if (el.style.getPropertyValue('--gsb-in') !== inset) el.style.setProperty('--gsb-in', inset);
     if (el.style.getPropertyValue('--gsb-r') !== radius) el.style.setProperty('--gsb-r', radius);
+  }
+  function reframe(el) {
+    applyReframe(el, measureReframe(el));
   }
 
   // ---------- where the label sits ----------
@@ -580,15 +672,15 @@
   const TAG_IN = 8;
   const TAG_CLEAR = 4;
   const CONTROL = 'button,[role="button"],summary,[data-gsb-live],[data-gsb-keep]';
-  function placeTag(card) {
-    if (fixedTag(card) || !card.isConnected || card.getAttribute('data-gsb') !== '1' || card.hasAttribute('data-gsb-ask')) return;
+  function measureTag(card) {
+    if (fixedTag(card) || !card.isConnected || card.getAttribute('data-gsb') !== '1' || card.hasAttribute('data-gsb-ask')) return null;
     const box = card.getBoundingClientRect();
-    if (!box.width || !box.height) return;
+    if (!box.width || !box.height) return null;
     const cs = getComputedStyle(card);
     const tag = getComputedStyle(card, '::after');
     const w = parseFloat(tag.width) || 0;
     const h = parseFloat(tag.height) || 20;
-    if (!w) return;
+    if (!w) return null;
     const right = box.right - (parseFloat(cs.borderRightWidth) || 0);
     const top = box.top + (parseFloat(cs.borderTopWidth) || 0);
     const inWay = [];
@@ -633,7 +725,10 @@
       x = TAG_IN;
       y = TAG_IN;
     }
-    const want = x === TAG_IN && y === TAG_IN ? ['', ''] : [y + 'px', x + 'px'];
+    return x === TAG_IN && y === TAG_IN ? ['', ''] : [y + 'px', x + 'px'];
+  }
+  function applyTag(card, want) {
+    if (!want) return;
     if (card.style.getPropertyValue('--gsb-tag-y') !== want[0] || card.style.getPropertyValue('--gsb-tag-x') !== want[1]) {
       if (want[0]) {
         card.style.setProperty('--gsb-tag-y', want[0]);
@@ -644,20 +739,23 @@
       }
     }
   }
+  function placeTag(card) {
+    applyTag(card, measureTag(card));
+  }
 
   // A small item's frame sits 2px outside it. Where that would be cut off (the
   // item clips itself, as a line that ends in an ellipsis does, or it sits
   // tight inside a row that clips), the frame goes on the item's own edge.
+  function fitSmallRead(el, cs, box) {
+    if (BARE.has(el.tagName) || !el.isConnected) return false;
+    cs = cs || getComputedStyle(el);
+    if (cs.display === 'inline') return false;
+    if (clipsPaint(cs)) return true;
+    const room = clipRoom(el, box || el.getBoundingClientRect(), 2);
+    return SIDES.some((k) => room[k] < 2);
+  }
   function fitSmall(el) {
-    if (BARE.has(el.tagName) || !el.isConnected) return;
-    const cs = getComputedStyle(el);
-    if (cs.display === 'inline') return;
-    let tight = clipsPaint(cs);
-    if (!tight) {
-      const room = clipRoom(el, el.getBoundingClientRect(), 2);
-      tight = SIDES.some((k) => room[k] < 2);
-    }
-    if (tight) el.style.setProperty('--gsb-in', '0px');
+    if (fitSmallRead(el)) el.style.setProperty('--gsb-in', '0px');
   }
 
   const GENERIC_BY = '[rel="author"],[itemprop="author"],.author,.byline,.channel-name,.username';
@@ -666,7 +764,7 @@
   // loose one could leave a line of the post itself in the clear.
   // Sites often render the name twice (YouTube has a hidden copy for
   // narrow layouts), so every copy is kept, up to three.
-  function markKeep(card) {
+  function findKeep(card) {
     const kept = [];
     for (const el of card.querySelectorAll(adapter ? adapter.keep || ':not(*)' : GENERIC_BY)) {
       if (el === card || kept.some((k) => k.contains(el) || el.contains(k))) continue;
@@ -674,11 +772,15 @@
       // Kept even when the name itself mentions the game: the box already
       // says what the card is about, and the channel is how you judge it.
       if (t.length >= 2 && t.length <= 40) {
-        el.setAttribute('data-gsb-keep', '');
         kept.push(el);
         if (kept.length === 3) break;
       }
     }
+    return kept;
+  }
+  function markKeep(card) {
+    const kept = findKeep(card);
+    for (const el of kept) el.setAttribute('data-gsb-keep', '');
     return kept.length > 0;
   }
   function bylineOf(card) {
@@ -746,29 +848,124 @@
   // hold no words about the game, so a recheck must not clear them for that.
   const mediaBoxes = new WeakSet();
 
-  function blur(el, asMedia) {
-    el = frameable(el);
-    if (asMedia) mediaBoxes.add(el);
-    if (stateOf(el)) return; // already hidden, or shown by the person
-    // The person said this exact item is not a spoiler, on this visit or an earlier one.
-    if (shown.size && !byHand.has(el) && shown.has(fingerprint(el))) return void el.setAttribute('data-gsb', '0');
-    // An ancestor already decides, also from outside a shadow root.
-    if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) return;
-    for (const inner of el.querySelectorAll(HIDDEN)) clear(inner);
-    const mode = modeFor(el);
-    if (mode === '3') fitSmall(el);
-    el.setAttribute('data-gsb', mode);
-    if (mode !== '3') markParts(el);
-    markLive(el);
-    if (mode === '1') placeTag(el);
-    blurred.add(el);
-    if (mode !== '2') {
-      sized.set(el, sizeOf(el));
-      watcher?.observe(el);
+  // Two-phase batching so blurring many cards in one scan or mutation turn
+  // reads all geometry first, writes all attributes second, and places tags
+  // and neighbour frames in one final read/write pass — avoiding per-card
+  // layout thrashing while still blurring in the same frame before paint.
+  let batchDepth = 0;
+  let queuedBlurs = null;
+  let queuedTags = null;
+  let queuedReframes = null;
+
+  function withBatch(fn) {
+    if (batchDepth++ === 0) {
+      queuedBlurs = new Map();
+      queuedTags = new Set();
+      queuedReframes = new Set();
     }
-    tally(el, kindOf(el, mode));
-    gateAll(el);
-    report();
+    try {
+      return fn();
+    } finally {
+      if (--batchDepth === 0) flushBatch();
+    }
+  }
+
+  function flushBatch() {
+    const pending = queuedBlurs;
+    const tags = queuedTags;
+    const reframes = queuedReframes;
+    queuedBlurs = null;
+    queuedTags = null;
+    queuedReframes = null;
+
+    // Phase 1: resolve targets and measure all geometry with zero DOM writes.
+    const candidates = new Map();
+    const markZero = [];
+    for (const [rawEl, opts] of pending) {
+      if (!rawEl.isConnected) continue;
+      const el = frameable(rawEl);
+      if (opts.asMedia) mediaBoxes.add(el);
+      if (stateOf(el)) continue;
+      if (shown.size && !byHand.has(el) && shown.has(fingerprint(el))) {
+        markZero.push(el);
+        continue;
+      }
+      if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) continue;
+      const prev = candidates.get(el);
+      candidates.set(el, prev ? { asMedia: prev.asMedia || opts.asMedia, thru: prev.thru || opts.thru } : opts);
+    }
+
+    // Drop any candidate contained inside another candidate in the same batch,
+    // walking through parentNode and ShadowRoot.host so shadow boundaries are crossed.
+    const planned = [];
+    for (const [el, opts] of candidates) {
+      let inside = false;
+      for (let up = el.parentNode || el.host; up; up = up.parentNode || up.host) {
+        if (candidates.has(up)) { inside = true; break; }
+      }
+      if (inside) continue;
+      const around = [];
+      const modePlan = measureMode(el, around);
+      for (const n of around) reframes.add(n);
+      const parts = modePlan.mode !== '3' ? measureParts(el, modePlan.keeps) : null;
+      planned.push({ el, opts, modePlan, parts });
+    }
+
+    // Phase 2: apply all DOM mutations in one write-only pass.
+    for (const el of markZero) el.setAttribute('data-gsb', '0');
+    let anyBlurred = false;
+    for (const { el, opts, modePlan, parts } of planned) {
+      if (!el.isConnected || stateOf(el)) continue;
+      ensureShadowStyle(el);
+      for (const inner of el.querySelectorAll(HIDDEN)) clear(inner);
+      if (shadowSeen) {
+        if (el.shadowRoot) for (const inner of el.shadowRoot.querySelectorAll(HIDDEN)) clear(inner);
+        for (const s of el.getElementsByTagName('*')) {
+          if (s.shadowRoot) for (const inner of s.shadowRoot.querySelectorAll(HIDDEN)) clear(inner);
+        }
+      }
+      const mode = applyMode(el, modePlan);
+      el.setAttribute('data-gsb', mode);
+      if (opts.thru) el.setAttribute('data-gsb-thru', '');
+      if (parts) applyParts(el, parts);
+      markLive(el);
+      if (mode === '1' && !modePlan.fixed) tags.add(el);
+      blurred.add(el);
+      if (mode !== '2') {
+        sized.set(el, modePlan.size);
+        watcher?.observe(el);
+      }
+      tally(el, kindOf(el, mode));
+      gateAll(el);
+      anyBlurred = true;
+    }
+    if (anyBlurred) {
+      ensureDocStyle();
+      report();
+    }
+
+    // Phase 3: one read pass then one write pass for neighbour reframes & tags.
+    const reframeWrites = [];
+    for (const el of reframes) {
+      const f = measureReframe(el);
+      if (f) reframeWrites.push([el, f]);
+    }
+    const tagWrites = [];
+    for (const card of tags) {
+      const w = measureTag(card);
+      if (w) tagWrites.push([card, w]);
+    }
+    for (const [el, f] of reframeWrites) applyReframe(el, f);
+    for (const [card, w] of tagWrites) applyTag(card, w);
+  }
+
+  function blur(el, asMedia, thru = false) {
+    if (batchDepth > 0) {
+      const prev = queuedBlurs.get(el);
+      queuedBlurs.set(el, prev ? { asMedia: prev.asMedia || !!asMedia, thru: prev.thru || !!thru } : { asMedia: !!asMedia, thru: !!thru });
+      return;
+    }
+    withBatch(() => blur(el, asMedia, thru));
   }
 
   // The site's own menu on a hidden post (the three dots) keeps working, so
@@ -875,8 +1072,7 @@
   // text, every picture or video, and every empty leaf (often a CSS
   // background image). The kept channel is never inside a piece. Runs again
   // whenever the card's content changes, since sites fill cards in late.
-  function markParts(card) {
-    const keeps = [...card.querySelectorAll('[data-gsb-keep]')];
+  function measureParts(card, keeps) {
     const kinds = new Map(); // element -> "t" or "m"
     const within = (el, sel) => {
       const up = sel ? el.closest(sel) : null;
@@ -923,7 +1119,10 @@
         add(el, 'm'); // not the shapes inside a drawing: the drawing is the piece, or a small icon left alone
       }
     }
+    return kinds;
+  }
 
+  function applyParts(card, kinds) {
     for (const old of card.querySelectorAll('[data-gsb-part]')) {
       if (!kinds.has(old)) old.removeAttribute('data-gsb-part');
     }
@@ -938,6 +1137,10 @@
       if (inside) el.removeAttribute('data-gsb-part');
       else if (el.getAttribute('data-gsb-part') !== kind) el.setAttribute('data-gsb-part', kind);
     }
+  }
+
+  function markParts(card) {
+    applyParts(card, measureParts(card, [...card.querySelectorAll('[data-gsb-keep]')]));
   }
 
   // The confirm button is drawn by CSS at a fixed spot in the box.
@@ -1152,10 +1355,9 @@
       const row = closestAcross(match, rule.in);
       if (!row) continue;
       for (const line of rowLines(rule, row, match)) {
-        blur(line);
         // A row that opens something (a conversation) keeps its click: the
         // hidden line lets it through, and the message asks once it is open.
-        if (rule.open && isHiddenState(stateOf(line))) line.setAttribute('data-gsb-thru', '');
+        blur(line, false, rule.open);
       }
       return;
     }
@@ -1173,16 +1375,28 @@
   function scan(node) {
     if (!active) return 0;
     const matches = collect(node, []);
-    for (const m of matches) flag(m);
-    boxMedia(node);
+    withBatch(() => {
+      for (const m of matches) flag(m);
+      boxMedia(node);
+    });
     return matches.length;
   }
 
   // A hidden card whose content changed (sites reuse elements as you scroll).
-  function recheck(el) {
+  function recheck(el, structural = true) {
     if (!el.isConnected) {
-      blurred.delete(el);
+      if (blurred.delete(el)) {
+        everPruned = true;
+        report();
+      }
       watcher?.unobserve(el);
+      if (asking === el) hideBubble();
+      return;
+    }
+    // Pure text ticks inside an already-blurred piece (view counts, clocks)
+    // do not add buttons, media or new parts: if the card still matches, skip
+    // re-splitting and layout reads.
+    if (!structural && ((pageAbout && mediaBoxes.has(el)) || byHand.has(el) || (maybe(el.textContent) && hit(el.textContent)))) {
       return;
     }
     // Nothing in it names the game any more: the site reused the element for
@@ -1192,7 +1406,8 @@
     else {
       if (el.getAttribute('data-gsb') !== '3') markParts(el);
       markLive(el);
-      placeTag(el); // the site's buttons often arrive after the card does
+      if (batchDepth > 0) queuedTags.add(el);
+      else placeTag(el); // the site's buttons often arrive after the card does
       // Sites put the video into a post late, often after it is hidden.
       gateAll(el);
     }
@@ -1261,7 +1476,9 @@
     if (scope.nodeType === 1 && scope.matches('video,audio')) out.push(scope);
     for (const m of scope.querySelectorAll('video,audio')) out.push(m);
     if (scope.shadowRoot) mediaIn(scope.shadowRoot, out);
-    for (const el of scope.querySelectorAll('*')) if (el.shadowRoot) mediaIn(el.shadowRoot, out);
+    if (shadowSeen) {
+      for (const el of scope.querySelectorAll('*')) if (el.shadowRoot) mediaIn(el.shadowRoot, out);
+    }
     return out;
   }
   const gateAll = (scope) => mediaIn(scope).forEach(gate);
@@ -2092,23 +2309,79 @@
 
   const OBSERVE = { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS };
 
+  let everPruned = false;
+  function pruneBlurred() {
+    let removed = false;
+    for (const el of blurred) {
+      if (el.isConnected) continue;
+      blurred.delete(el);
+      watcher?.unobserve(el);
+      if (asking === el) hideBubble();
+      removed = true;
+    }
+    if (removed) {
+      everPruned = true;
+      report();
+    }
+  }
+
+  // A hidden card that the site detached (and we pruned) and later re-attaches
+  // still carries data-gsb, so blur() would skip it. Take it back into blurred
+  // and ResizeObserver and let recheck decide whether it still matches (or
+  // clear it right away if No Wanted was switched off while it was away).
+  function reclaimHidden(node, stale) {
+    let reclaimed = false;
+    const take = (h) => {
+      if (!h.isConnected || blurred.has(h)) return;
+      if (!active) { clear(h); return; }
+      blurred.add(h);
+      if (h.getAttribute('data-gsb') !== '2') watcher?.observe(h);
+      ensureShadowStyle(h);
+      stale.set(h, true);
+      reclaimed = true;
+    };
+    if (node.matches(HIDDEN)) take(node);
+    for (const h of node.querySelectorAll(HIDDEN)) take(h);
+    if (shadowSeen) {
+      if (node.shadowRoot) {
+        for (const h of node.shadowRoot.querySelectorAll(HIDDEN)) take(h);
+      }
+      for (const s of node.getElementsByTagName('*')) {
+        if (s.shadowRoot) for (const h of s.shadowRoot.querySelectorAll(HIDDEN)) take(h);
+      }
+    }
+    return reclaimed;
+  }
+
   function onMutations(records) {
     if (location.href !== lastUrl) onUrlChange();
-    if (!active) return;
+    if (!active) {
+      if (everPruned) {
+        for (const r of records) {
+          if (r.type !== 'childList') continue;
+          for (const n of r.addedNodes) if (n.nodeType === 1) reclaimHidden(n, null);
+        }
+      }
+      return;
+    }
     if (pageOn && veil && !veil.isConnected) root.appendChild(veil);
 
-    const stale = new Set();
+    const stale = new Map(); // owner -> true if structural or outside an already-blurred part
     const fresh = new Set();
     const relabeled = new Set();
     let titleTouched = false;
+    let sawRemoval = false;
 
     for (const r of records) {
+      if (!sawRemoval && r.type === 'childList' && r.removedNodes.length && blurred.size) {
+        for (const n of r.removedNodes) if (n.nodeType === 1) { sawRemoval = true; break; }
+      }
       const t = r.target;
       const el = t.nodeType === 1 ? t : t.parentElement;
       if (!el) {
         // a shadow root or the document itself
         if (r.type === 'childList') for (const n of r.addedNodes) if (n.nodeType === 1) fresh.add(n);
-        if (watchedRoots.has(t)) styleShadow(t);
+        if (styledRoots.has(t)) styleShadow(t);
         continue;
       }
       if (el.tagName === 'TITLE' || (el.tagName === 'HEAD' && r.type === 'childList')) {
@@ -2117,7 +2390,13 @@
       }
       const owner = closestAcross(el, HIDDEN);
       if (owner) {
-        stale.add(owner);
+        let structural = r.type === 'attributes' || owner.getAttribute('data-gsb') === '3';
+        if (!structural && r.type === 'childList') {
+          for (const n of r.addedNodes) if (n.nodeType === 1) { structural = true; break; }
+          if (!structural) for (const n of r.removedNodes) if (n.nodeType === 1) { structural = true; break; }
+        }
+        if (!structural && !el.closest('[data-gsb-part]')) structural = true;
+        if (structural || !stale.has(owner)) stale.set(owner, structural || stale.get(owner) === true);
         continue;
       }
       if (r.type === 'childList') {
@@ -2132,20 +2411,33 @@
       }
     }
 
-    for (const el of stale) recheck(el);
-    for (const el of relabeled) {
-      if (el.isConnected && !SKIP_TAG.has(el.tagName) && attrHits(el)) flag(el);
-    }
-    for (const el of fresh) {
-      if (!el.isConnected) continue;
-      if (pageOn || topCover) gateAll(el); // a player added under the page cover
-      const found = scan(el);
-      // A small piece ("6", "GTA") may finish a match that starts next to it.
-      const parent = el.parentElement;
-      if (!found && parent && !WALL.has(parent.tagName) && el.textContent.length <= 40 && parent.textContent.length <= 2000) {
-        scan(parent);
+    if (everPruned && fresh.size) {
+      let reclaimed = false;
+      for (const el of fresh) {
+        if (el.isConnected && reclaimHidden(el, stale)) reclaimed = true;
       }
+      if (reclaimed) report();
     }
+
+    withBatch(() => {
+      for (const [el, structural] of stale) recheck(el, structural);
+      for (const el of relabeled) {
+        if (el.isConnected && !SKIP_TAG.has(el.tagName) && attrHits(el)) flag(el);
+      }
+      const scannedParents = new Set();
+      for (const el of fresh) {
+        if (!el.isConnected) continue;
+        if (pageOn || topCover) gateAll(el); // a player added under the page cover
+        const found = scan(el);
+        // A small piece ("6", "GTA") may finish a match that starts next to it.
+        const parent = el.parentElement;
+        if (!found && parent && !scannedParents.has(parent) && !WALL.has(parent.tagName) && el.textContent.length <= 40 && parent.textContent.length <= 2000) {
+          scannedParents.add(parent);
+          scan(parent);
+        }
+      }
+    });
+    if (sawRemoval && blurred.size) pruneBlurred();
     if (titleTouched) onTitleChange();
   }
 
@@ -2181,6 +2473,7 @@
         if (el.isConnected) continue;
         blurred.delete(el);
         watcher?.unobserve(el);
+        everPruned = true;
       }
       send({ type: 'count', n: currentCount(), added, site });
       added = {};
@@ -2264,14 +2557,33 @@
     }
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('gsb-shadow', onShadow, true);
+    const checkUrl = () => location.href !== lastUrl && onUrlChange();
     for (const type of ['popstate', 'hashchange', 'yt-navigate-finish', 'pageshow']) {
-      window.addEventListener(type, () => location.href !== lastUrl && onUrlChange(), true);
+      window.addEventListener(type, checkUrl, true);
     }
     document.addEventListener('DOMContentLoaded', () => {
       followTitle();
       checkPage();
     });
-    setInterval(() => location.href !== lastUrl && onUrlChange(), 1000);
+    // Use the Navigation API when available (zero polling in any frame). On
+    // browsers without it, only poll in the visible top frame — never in child
+    // iframes or hidden tabs.
+    if (typeof globalThis.navigation?.addEventListener === 'function') {
+      globalThis.navigation.addEventListener('currententrychange', checkUrl);
+    } else if (isTop) {
+      let urlTimer = 0;
+      const syncUrlTimer = () => {
+        if (document.visibilityState === 'visible') {
+          checkUrl();
+          if (!urlTimer) urlTimer = setInterval(checkUrl, 1000);
+        } else if (urlTimer) {
+          clearInterval(urlTimer);
+          urlTimer = 0;
+        }
+      };
+      document.addEventListener('visibilitychange', syncUrlTimer);
+      syncUrlTimer();
+    }
 
     look();
     quiet();

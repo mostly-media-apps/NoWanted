@@ -16,6 +16,7 @@
   // and frame win against sites' and other extensions' !important rules.
   const H = ':not(#_a#_b)';
   globalThis.GSB.CSS = `
+:root${H} { --gsb-css: 1 !important; }
 [data-gsb="1"]${H} [data-gsb-part],
 [data-gsb="2"]${H} [data-gsb-part] {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;
