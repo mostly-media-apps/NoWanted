@@ -38,7 +38,6 @@ const APPS = [
   { id: 'reddit', name: 'Reddit', color: '#ff4500', hosts: ['reddit.com'], prefix: '', profile: (n) => `/user/${n}`, dirs: ['user', 'u', 'r'], only: true },
   { id: 'twitch', name: 'Twitch', color: '#9146ff', hosts: ['twitch.tv'], prefix: '', profile: (n) => `/${n}`, notAccounts: ['videos', 'directory', 'search', 'settings', 'downloads', 'p', 'subscriptions', 'inventory', 'wallet', 'drops'] },
   { id: 'facebook', name: 'Facebook', color: '#0866ff', hosts: ['facebook.com'], prefix: '', profile: (n) => `/${n}`, notAccounts: ['profile.php', 'people', 'pages', 'pg', 'watch', 'reel', 'reels', 'videos', 'photo', 'photo.php', 'story.php', 'stories', 'permalink.php', 'share', 'groups', 'events', 'marketplace', 'gaming', 'hashtag', 'search', 'home.php', 'login'] },
-  { id: 'threads', name: 'Threads', color: '#000000', hosts: ['threads.com', 'threads.net'], prefix: '@', profile: (n) => `/@${n}`, at: true, dock: true },
   { id: 'bluesky', name: 'Bluesky', color: '#1185fe', hosts: ['bsky.app'], prefix: '@', profile: (n) => `/profile/${n.includes('.') ? n : n + '.bsky.social'}`, dirs: ['profile'], only: true },
 ];
 const SOCIAL_HOSTS = APPS.flatMap((a) => a.hosts);
@@ -47,9 +46,21 @@ const WEB = { id: 'web', name: 'Websites', prefix: '' };
 const ALLOW = { id: 'allow', name: 'Allowed', prefix: '' };
 const PLAIN = ['web', 'allow'];
 
+const IS_SAFARI = location.protocol === 'safari-web-extension:';
+const IS_TOUCH = navigator.maxTouchPoints > 0;
+
 let S;
+let tabId = null;
 let site = null;
 let onPage = null;
+let goneOnPage = 0;
+let tabBlur = false;
+let siteAbout = false;
+let siteAboutShown = false;
+let twoCopies = false;
+let picking = false;
+let needsAccess = false;
+let tabOverride = null; // test hook only
 let open = null; // the app on screen, or null for the home screen
 
 // ---- reading what was typed ----
@@ -173,8 +184,7 @@ function drawApps() {
       label.className = 'label';
       label.textContent = app.name;
       b.append(tile, label);
-      if (app.dock) $('settings').before(b);
-      else grid.append(b);
+      grid.append(b);
     }
   }
   for (const app of [...APPS, WEB, ALLOW]) {
@@ -186,16 +196,80 @@ function drawApps() {
   }
 }
 
+const TWO_COPIES_NOTE = 'Two copies of No Wanted are running on this page. Turn one off in your browser’s extensions';
+
+function homeState({ enabled, offSites = [], mode = 'blur', reveal = 'click', site: s = null, onPage: n = null, gone = 0, tabBlur: blurredHere = false, siteAbout: about = false, siteAboutShown: aboutShown = false, twoCopies: dup = false, picking: pickOn = false, safari = IS_SAFARI, touch = IS_TOUCH, needsAccess: need = false }) {
+  const offHere = Boolean(s && offSites.some((h) => s === h || s.endsWith('.' + h)));
+  const showBlurred = Boolean(enabled && !offHere && mode === 'hide' && n !== null && gone > 0 && !blurredHere);
+  const showPage = Boolean(enabled && !offHere && reveal !== 'locked' && n !== null && about && !aboutShown);
+  const showReload = Boolean(s && n === null && !(safari && need));
+  const showPick = Boolean(enabled && !offHere && n !== null);
+  const copyNote = dup ? TWO_COPIES_NOTE : '';
+  if (!enabled) return { line: 'Off. Nothing is being hidden', accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
+  if (offHere) return { line: `Off on ${s}`, accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
+  if (n !== null) return { line: `${number(n)} on this page`, accessNote: copyNote, showBlurred, showPage, showReload: false, showPick, picking: Boolean(pickOn) };
+  if (safari && need && !s) {
+    return {
+      line: 'No Wanted can’t see this page yet',
+      accessNote: touch
+        ? 'On a website: open Settings, then Safari, then Extensions. Switch on No Wanted and set All Websites to Allow'
+        : 'On a website: open Safari Extensions preferences and choose Always Allow on Every Website',
+      showBlurred: false,
+      showPage: false,
+      showReload: false,
+      showPick: false,
+      picking: false,
+    };
+  }
+  return { line: s ? 'Reload this tab to start here' : 'Can’t run on this page', accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
+}
+
 function drawHome() {
   document.body.classList.toggle('is-off', !S.enabled);
   $('enabled').checked = S.enabled;
-  const offHere = site && S.offSites.some((h) => site === h || site.endsWith('.' + h));
-  let line;
-  if (!S.enabled) line = 'Off. Nothing is being hidden';
-  else if (offHere) line = `Off on ${site}`;
-  else if (onPage === null) line = site ? 'Reload this tab to start here' : 'Can’t run on this page';
-  else line = `${number(onPage)} on this page`;
+  const { line, accessNote, showBlurred, showPage, showReload, showPick, picking: pickOn } = homeState({
+    enabled: S.enabled,
+    offSites: S.offSites,
+    mode: tabOverride && 'mode' in tabOverride ? tabOverride.mode : S.mode,
+    reveal: tabOverride && 'reveal' in tabOverride ? tabOverride.reveal : S.reveal,
+    site: tabOverride ? tabOverride.site : site,
+    onPage: tabOverride ? tabOverride.onPage : onPage,
+    gone: tabOverride && 'gone' in tabOverride ? tabOverride.gone : goneOnPage,
+    tabBlur: tabOverride && 'tabBlur' in tabOverride ? tabOverride.tabBlur : tabBlur,
+    siteAbout: tabOverride && 'siteAbout' in tabOverride ? tabOverride.siteAbout : siteAbout,
+    siteAboutShown: tabOverride && 'siteAboutShown' in tabOverride ? tabOverride.siteAboutShown : siteAboutShown,
+    twoCopies: tabOverride && 'twoCopies' in tabOverride ? tabOverride.twoCopies : twoCopies,
+    picking: tabOverride && 'picking' in tabOverride ? tabOverride.picking : picking,
+    safari: tabOverride ? tabOverride.safari : IS_SAFARI,
+    touch: tabOverride ? tabOverride.touch : IS_TOUCH,
+    needsAccess: tabOverride ? tabOverride.needsAccess : needsAccess,
+  });
   $('count').textContent = line;
+  const endedHidden = $('ended').hidden;
+  const pickBtn = $('pick-item');
+  if (pickBtn) {
+    pickBtn.hidden = !showPick || !endedHidden;
+    pickBtn.setAttribute('aria-pressed', pickOn ? 'true' : 'false');
+  }
+  const blurBtn = $('show-blurred');
+  const pageBtn = $('show-page');
+  const reloadBtn = $('reload-tab');
+  const actions = $('tab-actions');
+  if (blurBtn) blurBtn.hidden = !showBlurred || !endedHidden;
+  if (pageBtn) pageBtn.hidden = !showPage || !endedHidden;
+  if (reloadBtn) {
+    reloadBtn.hidden = !showReload || !endedHidden;
+    if (!showReload) {
+      reloadBtn.disabled = false;
+      reloadBtn.textContent = 'Reload this tab';
+    }
+  }
+  if (actions) actions.hidden = (!showBlurred && !showPage && !showReload) || !endedHidden;
+  const noteEl = $('access-note');
+  if (noteEl) {
+    $('access-text').textContent = accessNote;
+    noteEl.hidden = !accessNote || !endedHidden;
+  }
   drawApps();
 }
 
@@ -246,6 +320,7 @@ function draw() {
 
 function set(patch) {
   S = { ...S, ...patch };
+  if (Number.isInteger(tabId) && site) api.runtime.sendMessage({ type: 'popupSettingChange', tabId }).catch(() => {});
   save(patch);
   draw();
 }
@@ -377,21 +452,118 @@ $('handle').addEventListener('input', () => {
 
 $('enabled').addEventListener('change', (e) => set({ enabled: e.target.checked }));
 
+$('show-blurred').addEventListener('click', async () => {
+  if (tabId == null) return;
+  try {
+    const answer = await api.tabs.sendMessage(tabId, { type: 'showBlurred' });
+    tabBlur = true;
+    goneOnPage = 0;
+    if (answer && typeof answer.n === 'number') onPage = answer.n;
+    if (answer && 'siteAbout' in answer) siteAbout = !!answer.siteAbout;
+    if (answer && 'siteAboutShown' in answer) siteAboutShown = !!answer.siteAboutShown;
+  } catch {
+    tabBlur = true;
+    goneOnPage = 0;
+  }
+  drawHome();
+});
+
+$('show-page').addEventListener('click', async () => {
+  if (tabId == null) return;
+  try {
+    const answer = await api.tabs.sendMessage(tabId, { type: 'showSitePage' });
+    siteAbout = false;
+    siteAboutShown = true;
+    if (answer && typeof answer.n === 'number') onPage = answer.n;
+    if (answer && typeof answer.gone === 'number') goneOnPage = answer.gone;
+  } catch {
+    siteAbout = false;
+    siteAboutShown = true;
+  }
+  drawHome();
+});
+
+$('reload-tab').addEventListener('click', async () => {
+  if (tabId == null) return;
+  const btn = $('reload-tab');
+  btn.disabled = true;
+  btn.textContent = 'Reloading…';
+  try {
+    await api.tabs.reload(tabId);
+  } catch {
+    btn.disabled = false;
+    btn.textContent = 'Reload this tab';
+  }
+});
+
+$('pick-item').addEventListener('click', async () => {
+  const next = !picking;
+  picking = next;
+  drawHome();
+  if (tabId != null) {
+    try {
+      await api.runtime.sendMessage({ type: 'pick', tabId, on: next });
+    } catch {}
+  }
+  if (next) window.close();
+});
+
 $('settings').addEventListener('click', () => api.runtime.openOptionsPage());
 
 // ---- the tab, the clock ----
 
 async function readTab() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
-  if (!tab) return;
-  try {
-    const url = new URL(tab.url);
-    if (/^https?:$/.test(url.protocol)) site = G.siteOf(url.hostname);
-  } catch {}
-  try {
-    const answer = await api.tabs.sendMessage(tab.id, { type: 'count' }, { frameId: 0 });
-    if (answer) onPage = answer.n;
-  } catch {}
+  let nextTabId = null;
+  let nextSite = null;
+  let nextOnPage = null;
+  let nextGone = 0;
+  let nextTabBlur = false;
+  let nextSiteAbout = false;
+  let nextSiteAboutShown = false;
+  let nextTwoCopies = false;
+  let nextPicking = false;
+  let nextNeedsAccess = false;
+  if (tab) {
+    nextTabId = tab.id ?? null;
+    try {
+      const url = new URL(tab.url);
+      if (/^https?:$/.test(url.protocol)) {
+        nextSite = G.siteOf(url.hostname);
+        if (Number.isInteger(nextTabId)) api.runtime.sendMessage({ type: 'rememberTab', tabId: nextTabId }).catch(() => {});
+      }
+    } catch {}
+    if (IS_SAFARI && !tab.url) {
+      let allUrls = false;
+      try {
+        allUrls = Boolean(await api.permissions?.contains?.({ origins: ['<all_urls>'] }));
+      } catch {}
+      if (!allUrls) nextNeedsAccess = true;
+    }
+    try {
+      const answer = await api.tabs.sendMessage(tab.id, { type: 'count' }, { frameId: 0 });
+      if (answer) {
+        nextOnPage = answer.n;
+        nextGone = answer.gone || 0;
+        nextTabBlur = !!answer.tabBlur;
+        nextSiteAbout = !!answer.siteAbout;
+        nextSiteAboutShown = !!answer.siteAboutShown;
+        nextTwoCopies = !!answer.twoCopies;
+        nextPicking = !!answer.picking;
+        nextNeedsAccess = false;
+      }
+    } catch {}
+  }
+  tabId = nextTabId;
+  site = nextSite;
+  onPage = nextOnPage;
+  goneOnPage = nextGone;
+  tabBlur = nextTabBlur;
+  siteAbout = nextSiteAbout;
+  siteAboutShown = nextSiteAboutShown;
+  twoCopies = nextTwoCopies;
+  picking = nextPicking;
+  needsAccess = nextNeedsAccess;
 }
 
 function tick() {
@@ -419,10 +591,22 @@ onSettings((next) => {
   draw();
 });
 setInterval(async () => {
-  const before = onPage;
+  const prevPage = onPage;
+  const prevSite = site;
+  const prevGone = goneOnPage;
+  const prevBlur = tabBlur;
+  const prevAbout = siteAbout;
+  const prevAboutShown = siteAboutShown;
+  const prevCopies = twoCopies;
+  const prevNeed = needsAccess;
   await readTab();
-  if (onPage !== before) drawHome();
+  if (onPage !== prevPage || site !== prevSite || goneOnPage !== prevGone || tabBlur !== prevBlur || siteAbout !== prevAbout || siteAboutShown !== prevAboutShown || twoCopies !== prevCopies || needsAccess !== prevNeed) drawHome();
 }, 1000);
 
 // Exposed for the tests.
-globalThis.__nowanted = { openApp: (id) => openApp(id), entryFor: (id, text) => entryFor(id === 'web' ? WEB : id === 'allow' ? ALLOW : APPS.find((a) => a.id === id), text) };
+globalThis.__nowanted = {
+  openApp: (id) => openApp(id),
+  entryFor: (id, text) => entryFor(id === 'web' ? WEB : id === 'allow' ? ALLOW : APPS.find((a) => a.id === id), text),
+  homeState,
+  setTabState: (next) => { tabOverride = next || null; drawHome(); },
+};

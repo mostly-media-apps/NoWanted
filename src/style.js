@@ -3,7 +3,8 @@
 // which a page stylesheet cannot reach, get it injected by content.js.
 //
 // data-gsb values: "1" a framed card, "2" a card with no box of its own,
-// "3" a small or text-only element (blurred as one piece).
+// "3" a small or text-only element (blurred as one piece),
+// "h" hidden completely (taken out of view).
 //
 // Inside a card each piece is blurred inside its own box (data-gsb-part:
 // "m" a picture or video, "t" a line of text), so the card keeps its shape.
@@ -17,6 +18,7 @@
   const H = ':not(#_a#_b)';
   globalThis.GSB.CSS = `
 :root${H} { --gsb-css: 1 !important; }
+[data-gsb="h"]${H} { display: none !important; }
 [data-gsb="1"]${H} [data-gsb-part],
 [data-gsb="2"]${H} [data-gsb-part] {
   filter: blur(var(--gsb-blur, 20px)) grayscale(0.7) !important;

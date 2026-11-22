@@ -28,7 +28,20 @@
     <div class="tally">
       <span class="big display" id="total">0</span>
       <span class="tally-words"><span>spoilers blocked</span><span class="mono" id="count" role="status"></span></span>
+      <button type="button" class="pick-btn" id="pick-item" title="Hide or show an item on this page" aria-label="Hide or show an item on this page" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
     </div>
+
+    <!-- Quiet tab-local recovery buttons on the sky: hide mode blur fallback, Show this page, and stale-tab reload -->
+    <div class="tab-actions" id="tab-actions" hidden>
+      <button type="button" class="tab-action" id="show-blurred" hidden>Show them blurred on this tab</button>
+      <button type="button" class="tab-action" id="show-page" hidden>Show this page</button>
+      <button type="button" class="tab-action" id="reload-tab" hidden>Reload this tab</button>
+    </div>
+
+    <!-- Shown only on Safari when the active tab has no address and all-sites access is not granted yet -->
+    <div class="access-note" id="access-note" hidden><p id="access-text"></p></div>
 
     <!-- Shown once, the first time the menu is opened after the end date switched hiding off -->
     <div class="ended" id="ended" role="status" hidden>

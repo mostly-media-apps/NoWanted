@@ -101,6 +101,7 @@
   const DEFAULTS = {
     enabled: true,
     level: 'names', // title | names | wide
+    mode: 'blur', // blur | hide
     blur: 20, // px
     reveal: 'click', // click | locked
     hidePages: true,

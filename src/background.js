@@ -8,10 +8,119 @@ let saving = Promise.resolve();
 
 let badge = true;
 api.storage.sync.get({ badge: true }).then((v) => { badge = v.badge; }).catch(() => {});
+
+// Track numeric tabIds where our content script has connected (no URLs or
+// hostnames), persisted in local storage so it survives extension reloads and
+// store updates. When a setting changes, connected tabs apply it live through
+// storage.onChanged; only tabs whose content script is orphaned are reloaded
+// so the new setting actually takes effect there.
+const KNOWN_TABS_MAX = 200;
+let knownTabs = null;
+let knownTabsLoading = null;
+let knownTabsQueued = false;
+
+function loadKnownTabs() {
+  if (knownTabs) return Promise.resolve(knownTabs);
+  if (!knownTabsLoading) {
+    knownTabsLoading = api.storage.local.get('knownTabs').then((v) => {
+      knownTabs = new Set(Array.isArray(v?.knownTabs) ? v.knownTabs.filter((id) => Number.isInteger(id)) : []);
+      return knownTabs;
+    }, () => {
+      knownTabs = new Set();
+      return knownTabs;
+    });
+  }
+  return knownTabsLoading;
+}
+
+function saveKnownTabsSoon() {
+  if (knownTabsQueued || !knownTabs) return;
+  knownTabsQueued = true;
+  Promise.resolve().then(() => {
+    knownTabsQueued = false;
+    const list = [...knownTabs].slice(-KNOWN_TABS_MAX);
+    knownTabs = new Set(list);
+    api.storage.local.set({ knownTabs: list }).catch(() => {});
+  });
+}
+
+function rememberTab(tabId) {
+  if (!Number.isInteger(tabId)) return;
+  loadKnownTabs().then((set) => {
+    if (set.has(tabId)) return;
+    set.add(tabId);
+    saveKnownTabsSoon();
+  });
+}
+
+function forgetTab(tabId) {
+  loadKnownTabs().then((set) => {
+    if (set.delete(tabId)) saveKnownTabsSoon();
+  });
+}
+
+// Only a tab that was connected before this copy of the extension was
+// installed, updated or reloaded can be orphaned. A tab that cannot answer for
+// any other reason (a store page, a tab the system unloaded) is never
+// reloaded, and no tab is reloaded twice for the same update.
+api.runtime.onInstalled.addListener(() => {
+  loadKnownTabs().then((set) => api.storage.local.set({ staleTabs: [...set] })).catch(() => {});
+});
+
+let reloadCheck = Promise.resolve();
+let popupChangeTabId = null; // tabId of the popup that triggered the next setting change
+function reloadStaleTabs() {
+  const fromPopupTabId = popupChangeTabId;
+  popupChangeTabId = null;
+  reloadCheck = reloadCheck.then(async () => {
+    const stored = await api.storage.local.get('staleTabs').catch(() => null);
+    const stale = new Set(Array.isArray(stored?.staleTabs) ? stored.staleTabs : []);
+    if (!stale.size) return 0;
+    const known = await loadKnownTabs();
+    const tabs = await api.tabs.query({}).catch(() => null);
+    if (!tabs) return 0;
+    const liveIds = new Set(tabs.map((t) => t.id).filter((id) => Number.isInteger(id)));
+    let pruned = false;
+    for (const id of [...known]) {
+      if (!liveIds.has(id)) { known.delete(id); pruned = true; }
+    }
+    if (pruned) saveKnownTabsSoon();
+    // Never auto-reload a tab that is audible (tab.audible) or is the active
+    // tab of a window the person could be typing in unless the change came
+    // from that tab's own popup; the popup's "Reload this tab" button handles
+    // any skipped active tab.
+    const candidates = tabs.filter((t) =>
+      stale.has(t.id) && !t.discarded && !t.audible && t.status !== 'loading'
+      && (!t.active || t.id === fromPopupTabId));
+    let reloaded = 0;
+    await Promise.allSettled(candidates.map(async (t) => {
+      stale.delete(t.id); // it answers or it is reloaded: either way it is asked once
+      try {
+        const res = await api.tabs.sendMessage(t.id, { type: 'ping' }, { frameId: 0 });
+        if (res?.ok) return;
+      } catch {
+        // orphaned
+      }
+      try {
+        await api.tabs.reload(t.id);
+        reloaded++;
+      } catch {}
+    }));
+    for (const id of stale) if (!liveIds.has(id)) stale.delete(id);
+    await api.storage.local.set({ staleTabs: [...stale] }).catch(() => {});
+    return reloaded;
+  }).catch(() => 0);
+  return reloadCheck;
+}
+
 api.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'sync' || !changes.badge) return;
-  badge = changes.badge.newValue !== false;
-  for (const tabId of perTab.keys()) showCount(tabId);
+  if (area !== 'sync') return;
+  if (changes.badge) {
+    badge = changes.badge.newValue !== false;
+    for (const tabId of perTab.keys()) showCount(tabId);
+  }
+  const pageKeys = Object.keys(changes).filter((k) => k !== 'badge' && k !== 'ended');
+  if (pageKeys.length) reloadStaleTabs();
 });
 
 function showCount(tabId) {
@@ -73,6 +182,20 @@ api.runtime.onMessage.addListener((msg, sender, respond) => {
     reset.then(() => respond(true), () => respond(false));
     return true;
   }
+  if (msg.type === 'rememberTab' && Number.isInteger(msg.tabId)) {
+    rememberTab(msg.tabId);
+    return;
+  }
+  if (msg.type === 'popupSettingChange' && Number.isInteger(msg.tabId)) {
+    popupChangeTabId = msg.tabId;
+    rememberTab(msg.tabId);
+    return;
+  }
+  if (msg.type === 'pick') {
+    const targetTab = Number.isInteger(msg.tabId) ? msg.tabId : sender.tab?.id;
+    if (targetTab != null) api.tabs.sendMessage(targetTab, { type: 'pick', on: !!msg.on }).catch(() => {});
+    return;
+  }
   const tabId = sender.tab?.id;
   if (tabId == null) return;
   if (msg.type === 'veilAssets') {
@@ -88,6 +211,7 @@ api.runtime.onMessage.addListener((msg, sender, respond) => {
   }
   if (msg.type === 'count') {
     if (RULES_URL && (rulesNext === null || Date.now() >= rulesNext)) refreshRules();
+    rememberTab(tabId);
     if (!perTab.has(tabId)) perTab.set(tabId, new Map());
     perTab.get(tabId).set(sender.frameId ?? 0, msg.n || 0);
     showCount(tabId);
@@ -97,7 +221,10 @@ api.runtime.onMessage.addListener((msg, sender, respond) => {
   }
 });
 
-api.tabs.onRemoved.addListener((tabId) => perTab.delete(tabId));
+api.tabs.onRemoved.addListener((tabId) => {
+  perTab.delete(tabId);
+  forgetTab(tabId);
+});
 
 // ---------- the right-click menu ----------
 // One entry. What it does is decided by the page, which knows what is under
@@ -223,6 +350,7 @@ function cleanRules(raw) {
         }, [])
         : [];
       entry.off = strings(v.off, 50, 120).filter((p) => p.startsWith('/'));
+      entry.noHide = typeof v.noHide === 'boolean' ? v.noHide : null;
       sites[host] = entry;
     }
   }

@@ -81,6 +81,9 @@ button.quiet:hover { background: var(--raised); color: var(--text); box-shadow: 
 .frame-tag { position: absolute; top: 12px; right: 12px; height: 20px; padding: 0 8px; border-radius: 6px; background: rgba(22, 12, 28, 0.88); color: #ffffff; font-size: 11px; line-height: 20px; font-weight: 500; }
 .is-off #sample .shot, .is-off #sample .tile-title, .is-off #sample .when { filter: none; clip-path: none; }
 .is-off .frame { display: none; }
+.sample-gone { display: none; place-items: center; padding: 16px; border: 1px dashed var(--line-strong); border-radius: 8px; color: var(--text-3); font-size: 12px; line-height: 16px; text-align: center; }
+.is-hide:not(.is-off) #sample { display: none; }
+.is-hide:not(.is-off) .sample-gone { display: grid; }
 
 /* ---- fields ---- */
 .pair { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; }

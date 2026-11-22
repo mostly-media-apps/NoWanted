@@ -84,7 +84,7 @@
         if (n.nodeType !== 1) continue;
         if (n.hasAttribute('data-gsb-part') && n.matches(':hover')) onPart = true;
         const s = n.getAttribute('data-gsb');
-        if (s === '1' || s === '2' || s === '3') return !(n.hasAttribute('data-gsb-ok') && onPart);
+        if (s === '1' || s === '2' || s === '3' || s === 'h') return !(n.hasAttribute('data-gsb-ok') && onPart);
       }
       return false;
     } catch {

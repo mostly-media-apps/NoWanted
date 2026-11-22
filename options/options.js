@@ -6,8 +6,10 @@ let S = await loadSettings();
 
 function draw() {
   document.body.classList.toggle('is-off', !S.enabled);
+  document.body.classList.toggle('is-hide', S.mode === 'hide');
   $('enabled').checked = S.enabled;
   $('power-word').textContent = S.enabled ? 'On' : 'Off';
+  setSeg($('mode'), S.mode);
   setSeg($('frame'), S.frame);
   setSeg($('tag'), S.tag);
   $('badge').checked = S.badge;
@@ -138,6 +140,7 @@ $('level').addEventListener('change', (e) => set({ level: e.target.value }));
 for (const key of ['hidePages', 'muteMedia', 'maskTitle']) {
   $(key).addEventListener('change', (e) => set({ [key]: e.target.checked }));
 }
+bindSeg($('mode'), (mode) => set({ mode }));
 bindSeg($('reveal'), (reveal) => set({ reveal }));
 bindSeg($('frame'), (frame) => set({ frame }));
 bindSeg($('tag'), (tag) => set({ tag }));

@@ -21,6 +21,9 @@
 
   let S = { ...G.DEFAULTS };
   let src, re, loose;
+  const HIDDEN_PAGE_TITLE = 'Hidden page';
+  let realTitle = null; // the page's own title while ours is in its place
+  const pageTitle = () => (document.title && document.title !== HIDDEN_PAGE_TITLE ? document.title : realTitle ?? document.title);
   // The handle of the account whose page is open does not count as a word on
   // that page; the page itself is covered instead.
   function build() {
@@ -30,17 +33,20 @@
     const here = (location.pathname.split('/').filter(Boolean)[0] || '').replace(/^@/, '').toLowerCase();
     const except = here && src.test(location.href) ? new Set([here]) : null;
     const terms = except ? G.buildSources(sources, except).terms : src.terms;
-    oldGame = G.aboutOldGame(G.urlText(location.href) + ' ' + document.title);
+    oldGame = G.aboutOldGame(G.urlText(location.href) + ' ' + pageTitle());
     re = G.buildMatcher(S.level, words, terms, false, oldGame);
     loose = G.buildMatcher(S.level, words, terms, true, oldGame);
   }
   let oldGame = false;
   build();
   let active = !OWN_SITES.includes(site);
+  let tabBlur = false; // temporary blur override for this tab until reload
+  const useHide = () => S.mode === 'hide' && !tabBlur && !adapter?.noHide;
   let pageOn = false; // the whole page is covered
   let pageShown = false; // the person chose to see this page
+  let siteAbout = false; // adapter site page is about the game (no whole-page cover)
+  let siteAboutShown = false; // the person chose "Show this page" on this tab until reload
   let lastUrl = location.href;
-  let realTitle = null; // the page's own title while ours is in its place
   let added = {}; // blurs since the last report, by kind
   const counted = new WeakSet(); // each thing counts once, even when re-hidden
   const VIDEO_LINK = 'video,a[href*="/watch"],a[href*="/shorts/"],a[href*="/reel"],a[href*="/video/"],a[href*="/videos/"],[data-e2e*="video"]';
@@ -57,8 +63,15 @@
   }
 
   const blurred = new Set();
+  const ownZero = new WeakSet(); // elements this copy marked data-gsb="0"
+  const alive = () => {
+    try {
+      return !!api?.runtime?.id;
+    } catch {
+      return false;
+    }
+  };
   const REPLACED = new Set(['IMG', 'VIDEO', 'IFRAME', 'CANVAS', 'PICTURE', 'SVG', 'svg', 'BUTTON', 'TR', 'TD', 'TBODY', 'TABLE']);
-  const HIDDEN_PAGE_TITLE = 'Hidden page';
   const ATTRS = ['alt', 'title', 'aria-label', 'href'];
   const ATTR_SEL = '[alt],[title],[aria-label],a[href]';
   const SKIP_TAG = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'HEAD', 'TITLE', 'META', 'LINK']);
@@ -66,7 +79,7 @@
   // its links carry the words that were searched for, and a hidden puzzle
   // tile cannot be solved.
   const ROBOT_CHECK = '[id*="captcha" i],[class*="captcha" i],[data-testid*="captcha" i],[id^="anomaly-modal"],[data-testid^="anomaly-modal"]';
-  const SKIP_SEL = `script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask,#gsb-say,${ROBOT_CHECK}`;
+  const SKIP_SEL = `script,style,noscript,textarea,input,select,[contenteditable=""],[contenteditable="true"],[contenteditable="plaintext-only"],[role="textbox"],#gsb-veil,#gsb-ask,#gsb-say,#gsb-pick,${ROBOT_CHECK}`;
   const INLINE = new Set(['A', 'SPAN', 'B', 'I', 'EM', 'STRONG', 'MARK', 'SMALL', 'CODE', 'U', 'S', 'SUP', 'SUB', 'FONT', 'LABEL', 'TIME', 'ABBR', 'CITE', 'Q', 'BDI', 'BDO', 'YT-FORMATTED-STRING', 'YT-ATTRIBUTED-STRING']);
   const WALL = new Set(['BODY', 'HTML', 'MAIN', 'NAV', 'HEADER', 'FOOTER', 'FORM', 'ASIDE']);
   const CARD_TAG = new Set(['ARTICLE', 'LI', 'TR', 'FIGURE', 'BLOCKQUOTE', 'DD', 'P']);
@@ -407,8 +420,8 @@
 
   const stateOf = (el) => el.getAttribute('data-gsb');
 
-  const HIDDEN = '[data-gsb="1"],[data-gsb="2"],[data-gsb="3"]';
-  const isHiddenState = (v) => v === '1' || v === '2' || v === '3';
+  const HIDDEN = '[data-gsb="1"],[data-gsb="2"],[data-gsb="3"],[data-gsb="h"]';
+  const isHiddenState = (v) => v === '1' || v === '2' || v === '3' || v === 'h';
 
   // A site can give the label a fixed spot (adapter.tag: down, in from the
   // right, and optionally which cards it holds for).
@@ -769,9 +782,8 @@
     for (const el of card.querySelectorAll(adapter ? adapter.keep || ':not(*)' : GENERIC_BY)) {
       if (el === card || kept.some((k) => k.contains(el) || el.contains(k))) continue;
       const t = el.textContent.trim().replace(/\s+/g, ' ');
-      // Kept even when the name itself mentions the game: the box already
-      // says what the card is about, and the channel is how you judge it.
-      if (t.length >= 2 && t.length <= 40) {
+      // A creator name that names the game is blurred with the rest of the card.
+      if (t.length >= 2 && t.length <= 40 && !hit(t)) {
         kept.push(el);
         if (kept.length === 3) break;
       }
@@ -886,17 +898,25 @@
       const el = frameable(rawEl);
       if (opts.asMedia) mediaBoxes.add(el);
       if (stateOf(el)) continue;
-      if (shown.size && !byHand.has(el) && shown.has(fingerprint(el))) {
+      if (shown.size && !byHand.has(el) && hasIdentity(el) && shown.has(fingerprint(el))) {
         markZero.push(el);
         continue;
       }
       if (el.parentElement ? closestAcross(el.parentElement, '[data-gsb]') : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, '[data-gsb]')) continue;
       const prev = candidates.get(el);
-      candidates.set(el, prev ? { asMedia: prev.asMedia || opts.asMedia, thru: prev.thru || opts.thru } : opts);
+      candidates.set(el, prev
+        ? {
+            asMedia: prev.asMedia || opts.asMedia,
+            thru: prev.thru || opts.thru,
+            forceBlur: prev.forceBlur || opts.forceBlur,
+            fromSiteAbout: prev.fromSiteAbout || opts.fromSiteAbout,
+          }
+        : opts);
     }
 
     // Drop any candidate contained inside another candidate in the same batch,
     // walking through parentNode and ShadowRoot.host so shadow boundaries are crossed.
+    const hiding = useHide();
     const planned = [];
     for (const [el, opts] of candidates) {
       let inside = false;
@@ -904,6 +924,14 @@
         if (candidates.has(up)) { inside = true; break; }
       }
       if (inside) continue;
+      // Hide completely skips frame/parts/tag geometry; inline matches,
+      // adapter main/player targets, Shorts slides, and media boxed on a
+      // page the person chose to show fall back to blur.
+      const keepBlurred = opts.asMedia || opts.forceBlur || (adapter?.main && el.matches(adapter.main)) || el.matches(SLIDE_SEL);
+      if (hiding && !keepBlurred && getComputedStyle(el).display !== 'inline') {
+        planned.push({ el, opts, modePlan: { mode: 'h' }, parts: null });
+        continue;
+      }
       const around = [];
       const modePlan = measureMode(el, around);
       for (const n of around) reframes.add(n);
@@ -912,7 +940,10 @@
     }
 
     // Phase 2: apply all DOM mutations in one write-only pass.
-    for (const el of markZero) el.setAttribute('data-gsb', '0');
+    for (const el of markZero) {
+      ownZero.add(el);
+      el.setAttribute('data-gsb', '0');
+    }
     let anyBlurred = false;
     for (const { el, opts, modePlan, parts } of planned) {
       if (!el.isConnected || stateOf(el)) continue;
@@ -924,17 +955,20 @@
           if (s.shadowRoot) for (const inner of s.shadowRoot.querySelectorAll(HIDDEN)) clear(inner);
         }
       }
-      const mode = applyMode(el, modePlan);
+      const mode = modePlan.mode === 'h' ? 'h' : applyMode(el, modePlan);
       el.setAttribute('data-gsb', mode);
       if (opts.thru) el.setAttribute('data-gsb-thru', '');
-      if (parts) applyParts(el, parts);
-      markLive(el);
-      if (mode === '1' && !modePlan.fixed) tags.add(el);
-      blurred.add(el);
-      if (mode !== '2') {
-        sized.set(el, modePlan.size);
-        watcher?.observe(el);
+      if (mode !== 'h') {
+        if (parts) applyParts(el, parts);
+        markLive(el);
+        if (mode === '1' && !modePlan.fixed) tags.add(el);
+        if (mode !== '2') {
+          sized.set(el, modePlan.size);
+          watcher?.observe(el);
+        }
       }
+      blurred.add(el);
+      if (opts.fromSiteAbout) siteAboutBlurs.add(el);
       tally(el, kindOf(el, mode));
       gateAll(el);
       anyBlurred = true;
@@ -959,13 +993,20 @@
     for (const [card, w] of tagWrites) applyTag(card, w);
   }
 
-  function blur(el, asMedia, thru = false) {
+  function blur(el, asMedia, thru = false, forceBlur = false, fromSiteAbout = false) {
     if (batchDepth > 0) {
       const prev = queuedBlurs.get(el);
-      queuedBlurs.set(el, prev ? { asMedia: prev.asMedia || !!asMedia, thru: prev.thru || !!thru } : { asMedia: !!asMedia, thru: !!thru });
+      queuedBlurs.set(el, prev
+        ? {
+            asMedia: prev.asMedia || !!asMedia,
+            thru: prev.thru || !!thru,
+            forceBlur: prev.forceBlur || !!forceBlur,
+            fromSiteAbout: prev.fromSiteAbout || !!fromSiteAbout,
+          }
+        : { asMedia: !!asMedia, thru: !!thru, forceBlur: !!forceBlur, fromSiteAbout: !!fromSiteAbout });
       return;
     }
-    withBatch(() => blur(el, asMedia, thru));
+    withBatch(() => blur(el, asMedia, thru, forceBlur, fromSiteAbout));
   }
 
   // The site's own menu on a hidden post (the three dots) keeps working, so
@@ -992,6 +1033,7 @@
     strip(el);
     el.removeAttribute('data-gsb');
     blurred.delete(el);
+    siteAboutBlurs.delete(el);
     watcher?.unobserve(el);
     releaseAll(el);
   }
@@ -1319,33 +1361,77 @@
   // button in them. A topic's name in a menu ("GTA 6") tells a spoiler-free
   // person nothing they do not know, and hidden it broke the menu.
   const FURNITURE = 'nav,header,footer,menu,[role="navigation"],[role="banner"],[role="contentinfo"],[role="menu"],[role="menubar"],[role="tablist"],[role="toolbar"],[role="search"],[aria-label*="breadcrumb" i],[class*="breadcrumb" i]';
+  const PAGE_CHROME = 'header,footer,[role="banner"],[role="contentinfo"]';
   const FURNITURE_ITEM = 'a,button,summary,label,li,[role="tab"],[role="menuitem"],[role="link"],[role="button"],[role="option"]';
   // A menu entry is a short label with no picture. A headline with its picture
   // in a site's drop-down of latest stories is still a headline, and is hidden.
   const NAVIGATION = 'nav,[role="navigation"]';
   const LABEL_MAX = 40;
   const LABEL_PICTURE = 64;
+  const ROUND_PICTURE_MAX = 128;
+
+  // A page-level header, footer, banner or contentinfo region (never a header
+  // or footer that sits inside a post or article of its own).
+  function inPageHeaderOrFooter(el) {
+    let region = closestAcross(el, PAGE_CHROME);
+    while (region && (region.tagName === 'HEADER' || region.tagName === 'FOOTER') && region.parentElement && closestAcross(region.parentElement, POST_LIKE)) {
+      region = region.parentElement ? closestAcross(region.parentElement, PAGE_CHROME) : null;
+    }
+    return !!region;
+  }
+
+  // A round avatar or profile picture up to 128px across.
+  function isRoundPicture(m, r) {
+    if (!r.width || !r.height || r.width > ROUND_PICTURE_MAX || r.height > ROUND_PICTURE_MAX) return false;
+    if (Math.abs(r.width - r.height) > Math.max(12, Math.min(r.width, r.height) * 0.25)) return false;
+    const minSide = Math.min(r.width, r.height);
+    for (let n = m, i = 0; n && n !== document.body && i < 3; n = n.parentElement, i++) {
+      const cs = getComputedStyle(n);
+      const raw = cs.borderTopLeftRadius || '';
+      const rad = parseFloat(raw) || 0;
+      if ((raw.includes('%') && rad >= 40) || rad >= minSide * 0.4) return true;
+      const b = n.getBoundingClientRect();
+      if (b.width > r.width * 1.25 || b.height > r.height * 1.25) break;
+    }
+    return false;
+  }
+
+  // A child frame that serves the site's account switcher or menu widget
+  // (such as Google's ogs.google.com account frame, or a frame inside header/menu chrome).
+  const isAccountFrame = !isTop && (() => {
+    if (/^ogs\.google\.|^accounts\.google\./i.test(location.hostname) || /\/widget\/account\b|account[-_]?frame/i.test(location.pathname + location.search)) return true;
+    try {
+      const fe = window.frameElement;
+      if (!fe) return false;
+      if (inPageHeaderOrFooter(fe) || fe.closest('nav,[role="navigation"],menu,[role="menu"],[role="menubar"]')) return true;
+      const meta = `${fe.id || ''} ${fe.name || ''} ${fe.title || ''} ${fe.getAttribute('aria-label') || ''}`;
+      return /\b(account|user[-_ ]?menu)\b/i.test(meta);
+    } catch {
+      return false;
+    }
+  })();
+
   function inFurniture(match) {
     let region = closestAcross(match, FURNITURE);
     // A header or footer inside a post is the post's own.
     while (region && (region.tagName === 'HEADER' || region.tagName === 'FOOTER') && region.parentElement && closestAcross(region.parentElement, POST_LIKE)) {
       region = region.parentElement ? closestAcross(region.parentElement, FURNITURE) : null;
     }
+    if (!region && isAccountFrame) region = document.body || root;
     if (!region) return false;
     const inner = match.closest(FURNITURE_ITEM);
     const item = inner && region.contains(inner) ? inner : match;
     if (item.textContent.trim().replace(/\s+/g, ' ').length > LABEL_MAX) return false;
-    // An icon or a small face beside the label is still a label (the account
-    // switcher); a story's picture is bigger.
+    // An icon or a round face (up to 128px) beside the label is still a label
+    // (the account switcher); a story's picture is bigger or rectangular.
     for (const m of item.querySelectorAll(PART_MEDIA)) {
       const r = m.getBoundingClientRect();
-      if (r.width > LABEL_PICTURE || r.height > LABEL_PICTURE) return false;
+      if ((r.width > LABEL_PICTURE || r.height > LABEL_PICTURE) && !isRoundPicture(m, r)) return false;
     }
     return true;
   }
 
-  // Pages of a site where nothing is hidden (adapter.off): X's settings, whose
-  // list of muted words is the person's own.
+  // Pages of a site where nothing is hidden (adapter.off).
   const pathOff = () => !!adapter?.off?.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'));
 
   function flag(match) {
@@ -1393,21 +1479,28 @@
       if (asking === el) hideBubble();
       return;
     }
+    const keptBySiteAbout = () => siteAbout && siteAboutBlurs.has(el) && (!el.matches(SLIDE_SEL) || el === activeSlide());
     // Pure text ticks inside an already-blurred piece (view counts, clocks)
     // do not add buttons, media or new parts: if the card still matches, skip
     // re-splitting and layout reads.
-    if (!structural && ((pageAbout && mediaBoxes.has(el)) || byHand.has(el) || (maybe(el.textContent) && hit(el.textContent)))) {
+    if (!structural && ((pageAbout && mediaBoxes.has(el)) || byHand.has(el) || keptBySiteAbout() || (maybe(el.textContent) && hit(el.textContent)))) {
       return;
     }
     // Nothing in it names the game any more: the site reused the element for
     // something else. A picture boxed on a page shown anyway never did, and
     // stays boxed for as long as the page is in that state.
-    if (collect(el, []).length === 0 && !(pageAbout && mediaBoxes.has(el)) && !byHand.has(el)) clear(el);
+    if (collect(el, []).length === 0 && !(pageAbout && mediaBoxes.has(el)) && !byHand.has(el) && !keptBySiteAbout()) clear(el);
     else {
-      if (el.getAttribute('data-gsb') !== '3') markParts(el);
-      markLive(el);
-      if (batchDepth > 0) queuedTags.add(el);
-      else placeTag(el); // the site's buttons often arrive after the card does
+      const st = el.getAttribute('data-gsb');
+      if (st !== 'h') {
+        if (st !== '3') {
+          markKeep(el);
+          markParts(el);
+        }
+        markLive(el);
+        if (batchDepth > 0) queuedTags.add(el);
+        else placeTag(el); // the site's buttons often arrive after the card does
+      }
       // Sites put the video into a post late, often after it is hidden.
       gateAll(el);
     }
@@ -1416,6 +1509,7 @@
   // ---------- video and audio ----------
 
   const gated = new WeakMap(); // media element -> whether it was muted before
+  let heldCount = 0; // media elements currently held on this page
 
   // Media is stopped inside a hidden item, unless the item is allowed and the
   // pointer is on the piece that holds it.
@@ -1454,7 +1548,10 @@
 
   function gate(m) {
     if ((active || topCover) && S.muteMedia && isHidden(m)) {
-      if (!gated.has(m)) gated.set(m, m.muted);
+      if (!gated.has(m)) {
+        gated.set(m, m.muted);
+        heldCount++;
+      }
       if (!m.hasAttribute(HOLD)) m.setAttribute(HOLD, '');
       if (!m.muted) m.muted = true;
       // pause() on a video that has not started yet also takes away its
@@ -1468,7 +1565,20 @@
     if (!gated.has(m)) return;
     m.muted = gated.get(m);
     gated.delete(m);
+    if (heldCount > 0) heldCount--;
     fights.delete(m);
+  }
+
+  // Re-evaluate any media carrying data-gsb-hold inside scope (for example a
+  // shared player the site moved out of a hidden card into a clean one).
+  function syncHeld(scope) {
+    if (!heldCount) return;
+    if (scope.nodeType === 1 && scope.hasAttribute(HOLD) && scope instanceof HTMLMediaElement) gate(scope);
+    for (const m of scope.querySelectorAll(`[${HOLD}]`)) if (m instanceof HTMLMediaElement) gate(m);
+    if (shadowSeen && scope.nodeType === 1) {
+      if (scope.shadowRoot) syncHeld(scope.shadowRoot);
+      for (const s of scope.getElementsByTagName('*')) if (s.shadowRoot) syncHeld(s.shadowRoot);
+    }
   }
 
   // Every video and sound in there, inside shadow roots too.
@@ -1527,6 +1637,37 @@
   }
 
   function onPress(e) {
+    if (picking) {
+      if (pickUI && e.composedPath().includes(pickUI.host)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.type === 'pointerdown') {
+        lastPickPointerType = e.pointerType || 'mouse';
+        if (lastPickPointerType === 'touch') {
+          const raw = document.elementFromPoint(e.clientX, e.clientY) || e.composedPath().find((n) => n.nodeType === 1);
+          picked = pickCandidate(raw);
+          touchPicked = !!picked;
+          syncPickBox();
+        }
+      } else if (e.type === 'click') {
+        if (lastPickPointerType === 'touch' || touchPicked) {
+          if (!picked) {
+            const raw = document.elementFromPoint(e.clientX, e.clientY) || e.composedPath().find((n) => n.nodeType === 1);
+            picked = pickCandidate(raw);
+            touchPicked = !!picked;
+            syncPickBox();
+          }
+          return;
+        }
+        const raw = document.elementFromPoint(e.clientX, e.clientY) || e.composedPath().find((n) => n.nodeType === 1);
+        const cand = picked?.el?.isConnected ? picked : pickCandidate(raw);
+        if (!cand?.el?.isConnected) return;
+        stopPickAll();
+        if (cand.hidden) notASpoiler(cand.el);
+        else hideByHand(cand.el);
+      }
+      return;
+    }
     // Pressing anywhere but the bubble or its item takes the question away.
     if (asking && e.type === 'pointerdown') {
       const path = e.composedPath();
@@ -1576,6 +1717,26 @@
 
   let lastAllowed = null;
   function onHover(e) {
+    if (picking) {
+      if (e.type === 'touchstart') {
+        if (pickUI && e.composedPath().includes(pickUI.host)) return;
+        lastPickPointerType = 'touch';
+        const t = e.touches?.[0];
+        const raw = (t ? document.elementFromPoint(t.clientX, t.clientY) : null) || e.composedPath().find((n) => n.nodeType === 1);
+        picked = pickCandidate(raw);
+        touchPicked = !!picked;
+        syncPickBox();
+        return;
+      }
+      if ((e.type === 'pointermove' || e.type === 'mousemove') && e.pointerType !== 'touch' && !touchPicked) {
+        if (pickUI && e.composedPath().includes(pickUI.host)) return;
+        lastPickPointerType = 'mouse';
+        const raw = document.elementFromPoint(e.clientX, e.clientY);
+        picked = pickCandidate(raw);
+        syncPickBox();
+      }
+      return;
+    }
     const el = hiddenInPath(e);
     if (el) {
       e.stopImmediatePropagation();
@@ -1602,6 +1763,14 @@
   }
 
   function onKey(e) {
+    if (picking) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        stopPickAll();
+      }
+      return;
+    }
     if (e.key === 'Escape' && asking) return stopAsking(asking);
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const el = hiddenInPath(e);
@@ -1646,23 +1815,235 @@
   const byHand = new WeakSet();
   function hideByHand(el) {
     const card = frameable(pickTarget(el) || lineOf(el, null) || el);
+    forget(fingerprint(card));
+    ownZero.delete(card);
     if (stateOf(card) === '0') card.removeAttribute('data-gsb');
+    // Capture position and size before hide mode sets display: none.
+    const rect = card.getBoundingClientRect();
     byHand.add(card);
     blur(card);
     if (!isHiddenState(stateOf(card))) return; // something around it is hidden already
-    say(card, 'miss', fileReport('miss', card, 'by hand', stateOf(card)));
+    say(card, 'miss', fileReport('miss', card, 'by hand', stateOf(card), rect), rect);
   }
 
-  // Shown because the person said it is not a spoiler. That exact item stays
-  // shown, on this visit and the next: what is kept is a fingerprint of it.
+  //Shown because the person said it is not a spoiler. That exact item stays
+  // shown, on this visit and the next, when it has enough identity (its own
+  // link/id, words or image) not to collide with unrelated empty items.
   function notASpoiler(el) {
-    const id = fileReport('overblock', el, howHidden(el), stateOf(el));
-    remember(fingerprint(el));
+    const prevState = stateOf(el);
+    const wasSiteAbout = siteAboutBlurs.has(el);
+    const wasByHand = byHand.has(el);
+    const wasMediaBox = mediaBoxes.has(el);
+    const id = fileReport('overblock', el, howHidden(el), prevState);
+    const print = hasIdentity(el) ? fingerprint(el) : null;
+    if (print) remember(print);
     byHand.delete(el);
     clear(el);
+    ownZero.add(el);
     el.setAttribute('data-gsb', '0');
     report();
-    say(el, 'overblock', id);
+    say(el, 'overblock', id, null, {
+      print,
+      wasSiteAbout,
+      wasByHand,
+      wasMediaBox,
+      forceBlur: prevState === '1' && useHide(),
+    });
+  }
+
+  // ---------- pick mode on the page ----------
+  // Reaches the same hideByHand / notASpoiler actions when a site replaces the
+  // browser's right-click menu with its own (X's dashboard and messages) or on
+  // iPhone/iPad Safari where there is no context menu.
+  let picking = false;
+  let pickUI = null;
+  let picked = null; // { el, hidden }
+  let touchPicked = false;
+  let lastPickPointerType = 'mouse';
+
+  function pickCandidate(target) {
+    if (!target || target.nodeType !== 1 || !target.isConnected) return null;
+    if (target === document.body || target === root) return null;
+    if (target.closest(SKIP_SEL) || target.closest(NAVIGATION)) return null;
+    for (let n = target; n; n = n.parentElement || (n.getRootNode() instanceof ShadowRoot ? n.getRootNode().host : null)) {
+      if (isHiddenState(stateOf(n))) return { el: n, hidden: true };
+    }
+    const found = pickTarget(target) || lineOf(target, null) || target;
+    if (!found || WALL.has(found.tagName)) return null;
+    const card = frameable(found);
+    if (!card || WALL.has(card.tagName)) return null;
+    const r = card.getBoundingClientRect();
+    if (r.width < 24 || r.height < 14 || (r.width >= innerWidth * 0.96 && r.height >= innerHeight * 0.92)) return null;
+    return { el: card, hidden: isHiddenState(stateOf(card)) };
+  }
+
+  function buildPickUI() {
+    const host = document.createElement('div');
+    host.id = 'gsb-pick';
+    const shadow = host.attachShadow({ mode: 'closed' });
+    shadow.innerHTML = `
+      <style>
+        :host {
+          all: initial;
+          position: fixed;
+          top: 12px;
+          left: 0;
+          right: 0;
+          height: 40px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          pointer-events: none;
+          z-index: 2147483647;
+        }
+        :host([hidden]) { display: none; }
+        .box {
+          position: fixed;
+          left: 0;
+          top: 0;
+          pointer-events: none;
+          box-sizing: border-box;
+          border-radius: 10px;
+          box-shadow: 0 0 0 2px #ff5aa8;
+          transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .box[hidden] { display: none; }
+        .bar {
+          pointer-events: auto;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          height: 40px;
+          max-width: calc(100vw - 24px);
+          padding: 0 6px 0 14px;
+          border-radius: 12px;
+          background: rgba(22, 12, 28, 0.96);
+          box-shadow: 0 0 0 1px rgba(237, 237, 237, 0.12), 0 12px 32px rgba(0, 0, 0, 0.4);
+          font: 400 13px/20px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+          color: #ffffff;
+        }
+        .bar[hidden] { display: none; }
+        .lbl {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          color: #ededed;
+        }
+        button {
+          all: unset;
+          box-sizing: border-box;
+          height: 28px;
+          padding: 0 12px;
+          border-radius: 8px;
+          cursor: pointer;
+          white-space: nowrap;
+          background: rgba(237, 237, 237, 0.08);
+          color: #ffffff;
+          font: 500 13px/28px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+          transition: background-color 0.08s cubic-bezier(0.22, 1, 0.36, 1), transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        button:hover { background: rgba(237, 237, 237, 0.16); }
+        button:active { transform: scale(0.98); }
+        button:focus-visible { outline: 2px solid #ff5aa8; outline-offset: 2px; }
+        .act {
+          background: #ededed;
+          color: #171717;
+          font-weight: 600;
+        }
+        .act:hover { background: #ffffff; }
+        .act[hidden] { display: none; }
+        @media (prefers-reduced-motion: reduce) {
+          .box, button { transition: none; }
+        }
+      </style>
+      <div class="box" hidden></div>
+      <div class="bar" role="region" aria-label="Pick an item on this page">
+        <span class="lbl">Select an item to hide or show</span>
+        <button type="button" class="act" hidden></button>
+        <button type="button" class="cancel">Cancel</button>
+      </div>`;
+    const box = shadow.querySelector('.box');
+    const bar = shadow.querySelector('.bar');
+    const label = shadow.querySelector('.lbl');
+    const act = shadow.querySelector('.act');
+    const cancel = shadow.querySelector('.cancel');
+    bar.hidden = !isTop;
+    act.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = picked;
+      stopPickAll();
+      if (!target?.el?.isConnected) return;
+      if (target.hidden) notASpoiler(target.el);
+      else hideByHand(target.el);
+    });
+    cancel.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      stopPickAll();
+    });
+    for (const type of ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu']) {
+      host.addEventListener(type, (e) => e.stopPropagation());
+    }
+    return { host, box, bar, label, act, cancel };
+  }
+
+  function syncPickBox() {
+    if (!picking || !pickUI) return;
+    if (!picked?.el?.isConnected) {
+      picked = null;
+      touchPicked = false;
+      pickUI.box.hidden = true;
+      pickUI.act.hidden = true;
+      pickUI.label.textContent = 'Select an item to hide or show';
+      return;
+    }
+    const r = picked.el.getBoundingClientRect();
+    pickUI.box.hidden = false;
+    pickUI.box.style.width = `${Math.round(r.width)}px`;
+    pickUI.box.style.height = `${Math.round(r.height)}px`;
+    pickUI.box.style.transform = `translate(${Math.round(r.left)}px, ${Math.round(r.top)}px)`;
+    if (touchPicked) {
+      pickUI.act.textContent = picked.hidden ? 'Not a spoiler' : 'Hide this';
+      pickUI.act.hidden = false;
+      pickUI.label.textContent = 'Selected';
+    } else {
+      pickUI.act.hidden = true;
+      pickUI.label.textContent = picked.hidden ? 'Not a spoiler' : 'Hide this';
+    }
+  }
+
+  function setPick(on) {
+    const next = Boolean(on && active && !pageOn && !topCover);
+    if (picking === next) return;
+    picking = next;
+    picked = null;
+    touchPicked = false;
+    lastPickPointerType = 'mouse';
+    if (picking) {
+      if (asking) stopAsking(asking);
+      hidePanel();
+      if (!pickUI) pickUI = buildPickUI();
+      pickUI.box.hidden = true;
+      pickUI.act.hidden = true;
+      pickUI.label.textContent = 'Select an item to hide or show';
+      if (!pickUI.host.isConnected) root.appendChild(pickUI.host);
+      pickUI.host.hidden = false;
+      window.addEventListener('scroll', syncPickBox, { capture: true, passive: true });
+      window.addEventListener('resize', syncPickBox, { passive: true });
+    } else if (pickUI) {
+      window.removeEventListener('scroll', syncPickBox, { capture: true });
+      window.removeEventListener('resize', syncPickBox);
+      pickUI.box.hidden = true;
+      pickUI.act.hidden = true;
+      pickUI.host.hidden = true;
+    }
+  }
+
+  function stopPickAll() {
+    setPick(false);
+    send({ type: 'pick', on: false });
   }
 
   // A short number that stands for an item's words on this site. The words
@@ -1703,6 +2084,15 @@
     return '';
   }
   const CHANGING = /\b(?:\d[\d.,:]*\s*[kmb]?\+?|an?|just now|yesterday|today|ago|edited|views?|likes?|comments?|repl(?:y|ies)|reposts?|shares?|points?|upvotes?|votes?|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?|months?|mos?|years?|yrs?|[smhdwy])\b/g;
+  function hasIdentity(el) {
+    if (idOfItem(el)) return true;
+    const words = (el.textContent || '').toLowerCase().replace(/\d[\d.,:]*[kmb]?/g, ' ').replace(CHANGING, ' ').replace(/[^\p{L}]+/gu, ' ').trim();
+    if (words.length >= 8) return true;
+    return [...el.querySelectorAll('img')].some((m) => {
+      const s = (m.getAttribute('alt') || m.currentSrc || m.src || '').trim();
+      return s.length > 0 && !/^(data:,|about:blank)$/i.test(s);
+    });
+  }
   function fingerprint(el) {
     let text = idOfItem(el);
     if (!text) text = (el.textContent || '').toLowerCase().replace(/\d[\d.,:]*[kmb]?/g, ' ').replace(CHANGING, ' ').replace(/[^\p{L}]+/gu, ' ').trim().slice(0, 600);
@@ -1721,21 +2111,36 @@
     shown.add(print);
     const list = [...shown].slice(-SHOWN_MAX);
     shown = new Set(list);
-    api.storage.local.set({ shown: list }).catch(() => {});
+    if (!alive()) return;
+    try {
+      api.storage.local.set({ shown: list }).catch(() => {});
+    } catch {}
+  }
+  function forget(print) {
+    if (!print || !shown.delete(print)) return;
+    const list = [...shown];
+    if (!alive()) return;
+    try {
+      api.storage.local.set({ shown: list }).catch(() => {});
+    } catch {}
   }
   function loadShown() {
-    api.storage.local.get({ shown: [] }).then((v) => {
-      shown = new Set(Array.isArray(v.shown) ? v.shown : []);
-      if (!shown.size) return;
-      // Anything hidden before the list arrived is put right.
-      for (const el of [...blurred]) {
-        if (!byHand.has(el) && shown.has(fingerprint(el))) {
-          clear(el);
-          el.setAttribute('data-gsb', '0');
+    if (!alive()) return;
+    try {
+      api.storage.local.get({ shown: [] }).then((v) => {
+        shown = new Set(Array.isArray(v.shown) ? v.shown : []);
+        if (!shown.size) return;
+        // Anything hidden before the list arrived is put right.
+        for (const el of [...blurred]) {
+          if (!byHand.has(el) && hasIdentity(el) && shown.has(fingerprint(el))) {
+            clear(el);
+            ownZero.add(el);
+            el.setAttribute('data-gsb', '0');
+          }
         }
-      }
-      report();
-    }, () => {});
+        report();
+      }, () => {});
+    } catch {}
   }
 
   // ---- reports ----
@@ -1744,6 +2149,7 @@
   function howHidden(el) {
     if (byHand.has(el)) return 'by hand';
     if (mediaBoxes.has(el)) return 'picture on a page shown anyway';
+    if (siteAboutBlurs.has(el)) return 'site notes: page about the game';
     if (el.hasAttribute('data-gsb-thru')) return 'site notes: one line of a row';
     if (adapter && el.matches(adapter.cards)) return 'site notes: card';
     return adapter ? 'site notes: outside a card' : 'general rules';
@@ -1784,15 +2190,17 @@
   const REPORTS_MAX = 200;
   let filing = Promise.resolve();
   const editReports = (change) => {
+    if (!alive()) return;
     filing = filing.then(async () => {
+      if (!alive()) return;
       const { reports } = await api.storage.local.get({ reports: [] });
       const list = Array.isArray(reports) ? reports : [];
       change(list);
       await api.storage.local.set({ reports: list.slice(-REPORTS_MAX) });
     }).catch(() => {});
   };
-  function fileReport(type, el, rule, state) {
-    const box = el.getBoundingClientRect();
+  function fileReport(type, el, rule, state, rect) {
+    const box = rect || el.getBoundingClientRect();
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const record = {
       id, tool: 'nw-report', version: 1,
@@ -1871,11 +2279,14 @@
         .more { display: block; width: 100%; margin-top: 8px; background: #ededed; color: #171717; font-weight: 600; line-height: 32px; text-align: center; }
         .more:hover { background: #ffffff; }
         .more[hidden] { display: none; }
+        .undo { display: block; width: 100%; margin-top: 8px; background: transparent; color: #b9b3c2; line-height: 32px; text-align: center; }
+        .undo:hover { background: rgba(237, 237, 237, 0.08); color: #ffffff; }
+        .undo[hidden] { display: none; }
         @media (prefers-reduced-motion: reduce) { .p { transform: none; } button { transition: none; } }
       </style>
-      <div class="p" role="dialog" aria-labelledby="t"><div class="t" id="t"></div><div class="q"></div><div class="list"></div><button type="button" class="more" hidden></button></div>`;
+      <div class="p" role="dialog" aria-labelledby="t"><div class="t" id="t"></div><div class="q"></div><div class="list"></div><button type="button" class="more" hidden></button><button type="button" class="undo" hidden>Undo</button></div>`;
     const box = shadow.querySelector('.p');
-    const p = { host, box, title: shadow.querySelector('.t'), ask: shadow.querySelector('.q'), list: shadow.querySelector('.list'), more: shadow.querySelector('.more'), timer: 0, id: null, source: null };
+    const p = { host, box, title: shadow.querySelector('.t'), ask: shadow.querySelector('.q'), list: shadow.querySelector('.list'), more: shadow.querySelector('.more'), undo: shadow.querySelector('.undo'), timer: 0, id: null, source: null, undoState: null };
     p.list.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -1883,7 +2294,40 @@
       hidePanel();
     });
     p.more.addEventListener('click', () => {
-      if (p.source && !S.sources.includes(p.source.value)) api.storage.sync.set({ sources: [...S.sources, p.source.value] }).catch(() => {});
+      if (p.source && !S.sources.includes(p.source.value) && alive()) {
+        try {
+          api.storage.sync.set({ sources: [...S.sources, p.source.value] }).catch(() => {});
+        } catch {}
+      }
+      hidePanel();
+    });
+    p.undo.addEventListener('click', () => {
+      const u = p.undoState;
+      if (!u) return;
+      if (u.print) forget(u.print);
+      if (p.id) {
+        const dropId = p.id;
+        editReports((list) => {
+          const idx = list.findIndex((x) => x.id === dropId);
+          if (idx >= 0) list.splice(idx, 1);
+        });
+      }
+      const target = u.el;
+      if (target?.isConnected) {
+        ownZero.delete(target);
+        target.removeAttribute('data-gsb');
+        if (u.wasByHand) {
+          byHand.add(target);
+          blur(target);
+        } else if (u.wasMediaBox) {
+          blur(target, false, true);
+        } else if (u.wasSiteAbout && siteAbout) {
+          blur(target, false, false, u.forceBlur, true);
+        } else if (active) {
+          scan(target);
+        }
+        report();
+      }
       hidePanel();
     });
     // The page never hears about clicks and keys in the panel.
@@ -1899,12 +2343,14 @@
     return p;
   }
 
-  function say(el, type, id) {
+  function say(el, type, id, rect, undoInfo = null) {
     if (!panel) panel = buildPanel();
     const p = panel;
     clearTimeout(p.timer);
     p.id = id;
-    p.title.textContent = type === 'miss' ? 'Hidden until this page reloads' : 'Shown, and it stays shown';
+    p.title.textContent = type === 'miss'
+      ? 'Hidden until this page reloads'
+      : (undoInfo && !undoInfo.print ? 'Shown until this page reloads' : 'Shown, and it stays shown');
     p.ask.textContent = type === 'miss' ? 'What gave it away? You can skip this' : 'Why was it hidden wrongly? You can skip this';
     p.list.replaceChildren(...REASONS[type].map((name) => {
       const b = document.createElement('button');
@@ -1916,10 +2362,12 @@
     p.source = type === 'miss' ? sourceOf(el) : null;
     p.more.hidden = !p.source;
     if (p.source) p.more.textContent = `Always hide posts from ${p.source.name}`;
+    p.undoState = type === 'overblock' ? { el, ...(undoInfo || {}) } : null;
+    p.undo.hidden = type !== 'overblock';
     if (!p.host.isConnected) root.appendChild(p.host);
     p.host.hidden = false;
     // Beside the item's top left corner, kept on screen.
-    const r = el.getBoundingClientRect();
+    const r = rect || el.getBoundingClientRect();
     const h = p.box.offsetHeight || 140;
     const x = Math.max(8, Math.min(r.left + 8, innerWidth - 240 - 8));
     const y = Math.max(8, Math.min(r.top + 8, innerHeight - h - 8));
@@ -1935,6 +2383,7 @@
     panel.box.classList.remove('on');
     panel.host.hidden = true;
     panel.id = null;
+    panel.undoState = null;
   }
 
   // ---------- whole pages ----------
@@ -1943,12 +2392,12 @@
   let pageCheckQueued = false;
 
   function pageIsAboutIt() {
-    if (pathOff()) return false;
+    if (pathOff() || isAccountFrame) return false;
     // Pages on the always-blur list are covered even with page covers off.
     if (src.any && src.test(location.href)) return true;
     if (!S.hidePages) return false;
     if (hit(G.urlText(location.href))) return true;
-    const title = realTitle ?? document.title;
+    const title = pageTitle();
     if (hit(title) && titleIsTheTopic()) return true;
     if (adapter?.signals) {
       for (const el of document.querySelectorAll(adapter.signals)) {
@@ -1970,6 +2419,9 @@
   }
 
   function isVisible(el) {
+    // An element No Wanted itself hid with display:none ("h") was visible on
+    // the page and must still count as a page signal / h1.
+    if (el.closest('[data-gsb="h"]')) return true;
     if (el.checkVisibility) return el.checkVisibility();
     return el.offsetParent !== null;
   }
@@ -1983,7 +2435,145 @@
     });
   }
 
+  // On any site with an adapter (built-in or from the daily rules file), a page
+  // judged about the game never gets a whole-page cover (except pages on the
+  // user's own always-blur list). Instead, adapter.main (player / focal post,
+  // always kept blurred) and adapter.thread (comments / replies / search cards)
+  // are hidden while navigation, search and clean sidebars stay usable.
+  const SLIDE_SEL = 'ytd-reel-video-renderer, ytm-reel-video-renderer';
+  const siteAboutBlurs = new Set(); // elements blurred solely because siteAbout is active
+
+  function activeSlide() {
+    const activeEl = document.querySelector('ytd-reel-video-renderer[is-active], ytm-reel-video-renderer[is-active]');
+    if (activeEl) return activeEl;
+    let best = null;
+    let bestDist = Infinity;
+    const mid = innerHeight / 2;
+    for (const el of document.querySelectorAll(SLIDE_SEL)) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || r.bottom <= 0 || r.top >= innerHeight) continue;
+      const d = Math.abs((r.top + r.bottom) / 2 - mid);
+      if (d < bestDist) { best = el; bestDist = d; }
+    }
+    return best;
+  }
+
+  function scanSiteAbout(scope) {
+    if (!active || !siteAbout || !adapter) return;
+    const pick = (sel, forceBlur) => {
+      if (!sel) return;
+      const list = [];
+      if (scope.nodeType === 1 && scope.matches(sel)) list.push(scope);
+      else if (scope.querySelectorAll) for (const el of scope.querySelectorAll(sel)) list.push(el);
+      for (const el of list) {
+        if (el.closest(SKIP_SEL) || el.closest(NAVIGATION)) continue;
+        if (adapter.leave && closestAcross(el, adapter.leave)) continue;
+        if (isHiddenState(stateOf(el)) || stateOf(el) === '0') continue;
+        if (el.parentElement ? closestAcross(el.parentElement, HIDDEN) : el.getRootNode() instanceof ShadowRoot && closestAcross(el.getRootNode().host, HIDDEN)) continue;
+        blur(el, false, false, forceBlur, true);
+      }
+    };
+    pick(adapter.main, true);
+    // On Shorts, fall back to the slide centered in the viewport if [is-active]
+    // is not set yet. On a cold direct load before any text or title names the
+    // game, a brief sound burst is accepted for now (same timing as whole-page
+    // covers) rather than delaying clean Shorts.
+    if (scope === document || scope === root || (scope.nodeType === 1 && (scope.matches(SLIDE_SEL) || scope.querySelector(SLIDE_SEL)))) {
+      const slide = activeSlide();
+      if (slide && !isHiddenState(stateOf(slide)) && stateOf(slide) !== '0') {
+        blur(slide, false, false, true, true);
+      }
+    }
+    pick(adapter.thread, false);
+  }
+
+  function syncSiteAbout(scope = document) {
+    if (!siteAbout) return;
+    // If a Shorts slide stopped being active while a lagging title still names
+    // the game, release that slide right away.
+    if (siteAboutBlurs.size) {
+      let slide;
+      for (const el of [...siteAboutBlurs]) {
+        if (!el.isConnected) {
+          siteAboutBlurs.delete(el);
+          continue;
+        }
+        if (el.matches(SLIDE_SEL)) {
+          if (slide === undefined) slide = activeSlide();
+          if (el !== slide) {
+            siteAboutBlurs.delete(el);
+            if (blurred.has(el)) recheck(el, true);
+          }
+        }
+      }
+    }
+    withBatch(() => scanSiteAbout(scope));
+  }
+
+  function clearSiteAbout() {
+    const was = siteAbout;
+    siteAbout = false;
+    if (!pageOn) unmaskTitle();
+    if (!siteAboutBlurs.size) {
+      if (was) report();
+      return;
+    }
+    const items = [...siteAboutBlurs];
+    siteAboutBlurs.clear();
+    withBatch(() => {
+      for (const el of items) {
+        if (!el.isConnected) {
+          blurred.delete(el);
+          watcher?.unobserve(el);
+          continue;
+        }
+        if (!blurred.has(el)) continue;
+        // Non-card main wrappers (players, watch metadata) clear whole and
+        // rescan so normal rules catch matching text without holding the video;
+        // cards recheck in place so cards naming the game stay blurred.
+        if (adapter && !el.matches(adapter.cards)) {
+          clear(el);
+          if (active) scan(el);
+        } else {
+          recheck(el, true);
+        }
+      }
+    });
+    if (heldCount) syncHeld(document);
+    report();
+  }
+
+  function showSitePage() {
+    if (!siteAbout || siteAboutShown) return;
+    siteAboutShown = true;
+    clearSiteAbout();
+  }
+
   function checkPage() {
+    const listed = active && !pathOff() && src.any && src.test(location.href);
+    if (listed) {
+      if (siteAbout) clearSiteAbout();
+      const wantCover = !pageShown;
+      if (wantCover && !pageOn) coverPage();
+      else if (!wantCover && pageOn) uncoverPage();
+      else if (wantCover) maskTitle();
+      return;
+    }
+    if (adapter) {
+      if (pageOn) uncoverPage();
+      const wantSite = active && !siteAboutShown && !pageShown && pageIsAboutIt();
+      if (wantSite) {
+        const entered = !siteAbout;
+        siteAbout = true;
+        maskTitle();
+        syncSiteAbout(document);
+        if (entered) report();
+      } else if (siteAbout) {
+        clearSiteAbout();
+      }
+      return;
+    }
+    if (siteAbout) clearSiteAbout();
     const want = active && !pageShown && pageIsAboutIt();
     if (want && !pageOn) coverPage();
     else if (!want && pageOn) uncoverPage();
@@ -2027,20 +2617,24 @@
     }
   }
 
+  function unmaskTitle() {
+    if (realTitle === null) return;
+    if (document.title === HIDDEN_PAGE_TITLE) document.title = realTitle;
+    realTitle = null;
+  }
+
   function uncoverPage() {
     pageOn = false;
     veil?.remove();
-    if (realTitle !== null) {
-      if (document.title === HIDDEN_PAGE_TITLE) document.title = realTitle;
-      realTitle = null;
-    }
+    if (!siteAbout) unmaskTitle();
     gateAll(document);
     tellFrames();
     report();
   }
 
   function maskTitle() {
-    if (!S.maskTitle || !isTop) return;
+    if (!isTop) return;
+    if (!S.maskTitle) return void unmaskTitle();
     const now = document.title;
     if (now === HIDDEN_PAGE_TITLE || !now) return;
     realTitle = now;
@@ -2090,14 +2684,13 @@
 
   const VIDEO_FRAME = /youtube|youtu\.be|vimeo|twitch|tiktok|twitter|x\.com|instagram|facebook|streamable|dailymotion|jwplayer|brightcove/i;
   const MEDIA = 'img,video,canvas,iframe,svg,[style*="background-image"]';
-  const SITE_PICTURES = 'nav,[role="navigation"],[role="menu"],[role="menubar"],[role="tablist"],[role="toolbar"],[role="tooltip"],[popover],[data-testid*="popover" i],[class*="popover" i]';
+  const SITE_PICTURES = 'nav,[role="navigation"],menu,[role="menu"],[role="menubar"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],[role="tablist"],[role="toolbar"],[role="tooltip"],[popover],[data-testid*="popover" i],[class*="popover" i]';
   function boxMedia(node) {
-    if (!pageAbout || !active || node.nodeType !== 1) return;
+    if (!pageAbout || !active || isAccountFrame || node.nodeType !== 1) return;
     const found = node.matches(MEDIA) ? [node] : [...node.querySelectorAll(MEDIA)];
     for (const m of found) {
       if (m.closest(HIDDEN) || m.closest(SKIP_SEL) || m.closest('[data-gsb="0"]')) continue;
-      // The site's own pictures: in its menus (a drop-down's thumbnails) and
-      // in its pop-over promotions. They are not this page's subject.
+      // The site's own pictures: in its navigation and menus, and in its pop-over promotions.
       if (m.closest(SITE_PICTURES)) continue;
       // Logos, icons and QR codes are drawn as svg; cookie and sign-in
       // prompts come in frames. Neither is the game.
@@ -2115,7 +2708,16 @@
         }
         continue;
       }
+      // Header/footer logos (up to 128px tall), button/summary icons (up to 128px
+      // on their longer side), and round avatars up to 128px are interface chrome;
+      // taller header heroes and larger gallery-button screenshots are boxed.
+      if ((inPageHeaderOrFooter(m) && r.height <= ROUND_PICTURE_MAX)
+        || (m.closest(BUTTON) && Math.max(r.width, r.height) <= ROUND_PICTURE_MAX)
+        || isRoundPicture(m, r)) continue;
       const box = mediaFrame(m, r);
+      if (box.closest(SITE_PICTURES)
+        || (inPageHeaderOrFooter(box) && r.height <= ROUND_PICTURE_MAX)
+        || (box.closest(BUTTON) && Math.max(r.width, r.height) <= ROUND_PICTURE_MAX)) continue;
       const b = box.getBoundingClientRect();
       // Something the size of the window is an overlay or a backdrop.
       if (b.width >= innerWidth * 0.9 && b.height >= innerHeight * 0.9) continue;
@@ -2176,6 +2778,7 @@
   let fontAdded = false;
   let veilAssets = null;
   function getVeilAssets() {
+    if (!alive()) return Promise.resolve(null);
     if (!veilAssets) {
       veilAssets = Promise.resolve().then(() => api.runtime.sendMessage({ type: 'veilAssets' })).catch(() => {
         veilAssets = null;
@@ -2335,7 +2938,8 @@
       if (!h.isConnected || blurred.has(h)) return;
       if (!active) { clear(h); return; }
       blurred.add(h);
-      if (h.getAttribute('data-gsb') !== '2') watcher?.observe(h);
+      const st = h.getAttribute('data-gsb');
+      if (st !== '2' && st !== 'h') watcher?.observe(h);
       ensureShadowStyle(h);
       stale.set(h, true);
       reclaimed = true;
@@ -2390,12 +2994,13 @@
       }
       const owner = closestAcross(el, HIDDEN);
       if (owner) {
-        let structural = r.type === 'attributes' || owner.getAttribute('data-gsb') === '3';
+        const ownerState = owner.getAttribute('data-gsb');
+        let structural = r.type === 'attributes' || ownerState === '3';
         if (!structural && r.type === 'childList') {
           for (const n of r.addedNodes) if (n.nodeType === 1) { structural = true; break; }
           if (!structural) for (const n of r.removedNodes) if (n.nodeType === 1) { structural = true; break; }
         }
-        if (!structural && !el.closest('[data-gsb-part]')) structural = true;
+        if (!structural && ownerState !== 'h' && !el.closest('[data-gsb-part]')) structural = true;
         if (structural || !stale.has(owner)) stale.set(owner, structural || stale.get(owner) === true);
         continue;
       }
@@ -2428,6 +3033,7 @@
       for (const el of fresh) {
         if (!el.isConnected) continue;
         if (pageOn || topCover) gateAll(el); // a player added under the page cover
+        if (siteAbout) scanSiteAbout(el);
         const found = scan(el);
         // A small piece ("6", "GTA") may finish a match that starts next to it.
         const parent = el.parentElement;
@@ -2437,6 +3043,10 @@
         }
       }
     });
+    if (heldCount) {
+      for (const el of fresh) if (el.isConnected) syncHeld(el);
+    }
+    if (active && siteAbout && fresh.size && (location.pathname.startsWith('/shorts') || [...siteAboutBlurs].some((el) => el.matches(SLIDE_SEL)))) syncSiteAbout(document);
     if (sawRemoval && blurred.size) pruneBlurred();
     if (titleTouched) onTitleChange();
   }
@@ -2445,16 +3055,19 @@
 
   function onUrlChange() {
     lastUrl = location.href;
+    if (document.title !== HIDDEN_PAGE_TITLE && realTitle !== null) realTitle = document.title;
     pageShown = cameFromAllowed();
     pageAbout = pageShown;
     build();
     checkPage();
     if (active) scan(root);
+    if (heldCount) syncHeld(document);
   }
 
   // ---------- settings and reporting ----------
 
   function send(msg) {
+    if (!alive()) return;
     try {
       const p = api.runtime.sendMessage(msg);
       if (p?.catch) p.catch(() => {});
@@ -2481,6 +3094,32 @@
   }
 
   const currentCount = () => blurred.size + (pageOn ? 1 : 0);
+  function goneCount() {
+    let n = 0;
+    for (const el of blurred) if (el.isConnected && el.getAttribute('data-gsb') === 'h') n++;
+    return n;
+  }
+  // Detects another copy of No Wanted (such as a store build alongside an
+  // unpacked build) marking elements or covering the page independently.
+  function hasSecondCopy() {
+    for (const v of document.querySelectorAll('#gsb-veil')) {
+      if (v !== veil) return true;
+    }
+    for (const el of document.querySelectorAll('[data-gsb]')) {
+      if (!blurred.has(el) && !ownZero.has(el)) return true;
+    }
+    return false;
+  }
+  function showTabBlurred() {
+    if (tabBlur) return;
+    tabBlur = true;
+    clearAll();
+    if (active) {
+      if (siteAbout) syncSiteAbout(document);
+      scan(root);
+    }
+    report();
+  }
 
   // Blur strength, frame color and the tag word, as variables the CSS reads.
   function look() {
@@ -2511,7 +3150,7 @@
   }
 
   function apply(next) {
-    const before = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R]);
+    const before = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R, useHide()]);
     S = { ...G.DEFAULTS, ...next };
     R = readRules();
     adapter = G.adapterFor(location.hostname, R?.sites);
@@ -2522,13 +3161,25 @@
     // "Stop hiding on": from that day on nothing is hidden. One page writes it
     // down (hiding off, the date cleared), so the menu can say so once.
     const over = G.endPassed(S);
-    if (over && S.enabled && isTop) api.storage.sync.set(G.endPatch(S)).catch(() => {});
+    if (over && S.enabled && isTop && alive()) {
+      try {
+        api.storage.sync.set(G.endPatch(S)).catch(() => {});
+      } catch {}
+    }
     active = S.enabled && !over && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
     look();
     root.toggleAttribute('data-gsb-locked', S.reveal === 'locked');
+    if (S.reveal === 'locked') {
+      if (asking) stopAsking(asking);
+      for (const el of document.querySelectorAll('[data-gsb-ask]')) stopAsking(el);
+    }
     quiet();
     veil?.sync();
-    const after = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R]);
+    if (pageOn || siteAbout) {
+      if (S.maskTitle) maskTitle();
+      else unmaskTitle();
+    }
+    const after = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R, useHide()]);
     if (!ready) {
       ready = true;
       if (!active) added = {};
@@ -2541,6 +3192,7 @@
     clearAll();
     for (const el of document.querySelectorAll('[data-gsb="0"]')) el.removeAttribute('data-gsb');
     pageShown = false;
+    siteAboutShown = false;
     checkPage();
     if (active) scan(root);
     report();
@@ -2606,7 +3258,20 @@
         apply(next);
       });
       api.runtime.onMessage.addListener((msg, _sender, respond) => {
-        if (msg?.type === 'count' && isTop) respond({ n: currentCount(), active, site });
+        if (msg?.type === 'ping') return void respond({ ok: true });
+        if (msg?.type === 'count' && isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+        if (msg?.type === 'showBlurred') {
+          showTabBlurred();
+          if (isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+        }
+        if (msg?.type === 'showSitePage') {
+          showSitePage();
+          if (isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+        }
+        if (msg?.type === 'pick') {
+          setPick(!!msg.on);
+          if (isTop) respond({ picking });
+        }
         if (msg?.type === 'menuAction') menuAction();
         if (msg?.type === 'cover') onCover(msg.on);
         if (msg?.type === 'coverQuery' && isTop) respond({ on: pageOn });

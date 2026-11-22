@@ -48,6 +48,10 @@ body { margin-inline: auto; }
 .save-note { position: absolute; z-index: 5; left: 16px; right: 16px; bottom: 16px; margin: 0; padding: 12px; border-radius: 12px; background: rgba(12, 7, 20, 0.92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); font-size: 13px; line-height: 20px; color: #ffffff; animation: ended-in var(--moderate) var(--ease) both; }
 .save-note[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .save-note { animation-name: none; } }
+/* Safari before website access is granted: plain guidance in the sky above the apps. */
+.access-note { margin: 16px 24px 0; padding: 12px 16px; border-radius: 12px; background: rgba(12, 7, 20, 0.86); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+.access-note[hidden] { display: none; }
+.access-note p { margin: 0; font-size: 13px; line-height: 20px; color: #ffffff; text-wrap: pretty; }
 /* The end date has passed: said once, with the way back. */
 .ended { margin: 12px 24px 0; padding: 12px; border-radius: 12px; background: rgba(12, 7, 20, 0.72); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); animation: ended-in var(--moderate) var(--ease) both; }
 .ended[hidden] { display: none; }
@@ -64,6 +68,35 @@ body { margin-inline: auto; }
 .tally .big { font-size: 32px; line-height: 32px; color: #ffffff; }
 .tally-words { display: grid; font-size: 13px; line-height: 16px; color: rgba(255, 255, 255, 0.9); }
 .tally-words .mono { font-size: 11px; line-height: 16px; color: rgba(255, 255, 255, 0.7); }
+.pick-btn {
+  margin-left: auto; flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 8px; background: rgba(12, 7, 20, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  color: #ededed; cursor: pointer;
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.pick-btn svg { width: 16px; height: 16px; }
+.pick-btn:hover { background: rgba(12, 7, 20, 0.84); color: #ffffff; }
+.pick-btn:active { transform: scale(0.96); }
+.pick-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pick-btn[aria-pressed="true"] { background: #ededed; color: #171717; box-shadow: none; }
+.pick-btn[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .pick-btn { transition: none; } }
+/* Quiet tab-local recovery buttons on the sky (hide-mode blur fallback and Show this page). */
+.tab-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 24px 0; }
+.tab-actions[hidden] { display: none; }
+.tab-action {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
+  border: 0; border-radius: 8px; background: rgba(12, 7, 20, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #ededed; font: 500 13px/20px var(--sans); cursor: pointer;
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.tab-action:hover { background: rgba(12, 7, 20, 0.88); color: #ffffff; }
+.tab-action:active { transform: scale(0.98); }
+.tab-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tab-action[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .tab-action { transition: none; } }
 
 /* ---- the apps ---- */
 .apps { position: absolute; top: 312px; left: 12px; right: 12px; display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 16px; }

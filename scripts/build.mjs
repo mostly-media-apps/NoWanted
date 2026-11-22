@@ -9,6 +9,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
 const SHIP = ['src', 'ui', 'popup', 'options', 'fonts', 'icons', 'art'];
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
+const releaseVersion = process.argv[2];
+if (releaseVersion !== undefined) {
+  if (!/^\d+\.\d+\.\d+$/.test(releaseVersion)) throw new Error('Invalid release version');
+  manifest.version = releaseVersion;
+}
 
 function firefox(m) {
   const out = structuredClone(m);

@@ -30,7 +30,7 @@
         'ytd-structured-description-content-renderer', 'yt-chip-cloud-chip-renderer',
         'ytd-endpoint-renderer', '.ytp-videowall-still', '.ytp-ce-element', '.ytp-suggestion-set',
         'ytm-video-with-context-renderer', 'ytm-compact-video-renderer', 'ytm-rich-item-renderer',
-        'ytm-reel-item-renderer', 'ytm-comment-renderer', 'ytm-playlist-video-renderer',
+        'ytm-reel-item-renderer', 'ytm-reel-video-renderer', 'ytm-comment-renderer', 'ytm-playlist-video-renderer',
         '.ytSuggestionComponentSuggestion', '.sbsb_c',
         // Sponsored results and promoted videos, in search, on the home page
         // and next to a video. An ad for the game is hidden like any post.
@@ -44,9 +44,13 @@
         'ytd-watch-metadata h1', 'ytd-watch-metadata #title', 'ytm-slim-video-metadata-section-renderer',
         '.ytp-title-link', '.ytp-title-text', 'yt-page-header-view-model h1', 'ytd-channel-name#channel-name.ytd-c4-tabbed-header-renderer',
       ],
+      main: '#movie_player, ytd-player#ytd-player, ytd-watch-metadata, ytd-reel-video-renderer[is-active], ytm-reel-video-renderer[is-active]',
+      thread: ':is(ytd-comments, #comments) :is(ytd-comment-view-model, ytd-comment-renderer), yt-live-chat-text-message-renderer, yt-live-chat-paid-message-renderer, yt-live-chat-membership-item-renderer, ytd-video-renderer, ytd-search :is(yt-lockup-view-model, ytd-reel-item-renderer, ytd-playlist-renderer, ytd-channel-renderer)',
     },
     {
       hosts: ['x.com', 'twitter.com'],
+      // Virtualised timeline: hide mode falls back to blur until live-checked.
+      noHide: true,
       keep: '[data-testid="User-Name"], [data-testid="UserName"], .x-middot-group > :first-child, [data-testid="UserCell"] a[role="link"]:not([href*="/status/"])',
       by: '[data-testid="User-Name"] span, [data-testid="UserCell"] span',
       // A post blurs as two clean shapes, its text and its media. The avatar,
@@ -98,6 +102,7 @@
       // The name of the person you are talking to, the headers and the box you
       // write in are never hidden, whatever they say.
       leave: '[data-testid="dm-inbox-header"], [data-testid="dm-conversation-header"], [data-testid="dm-conversation-header-item"], [data-testid="dm-composer-container"]',
+      thread: 'main article[data-testid="tweet"], main [data-testid="UserCell"]',
     },
     {
       hosts: ['reddit.com'],
@@ -125,6 +130,8 @@
         'a[data-testid="subreddit-recommendation"]',
       ],
       signals: ['shreddit-title', 'shreddit-subreddit-header', 'h1[slot="title"]'],
+      main: 'shreddit-post, div.thing.link',
+      thread: 'shreddit-comment, shreddit-profile-comment, div.thing.comment, [data-testid="search-post-unit"], [data-testid="search-sdui-post"], faceplate-tracker[source="search"]',
     },
     {
       hosts: ['tiktok.com'],
@@ -167,14 +174,17 @@
         'li.sbct', '[role="option"]', '.isv-r', '[data-ri]', 'c-wiz article', '.kp-wholepage',
         '[data-attrid]', 'div[jsname][data-docid]',
       ],
+      thread: '.MjjYud, .g, g-inner-card, g-card, .related-question-pair, .SoaBEf, .WlydOe, video-voyager, .isv-r, [data-ri], c-wiz article, .kp-wholepage, [data-attrid]',
     },
     {
       hosts: ['bing.com'],
       cards: ['li.b_algo', 'li.b_ans', '.b_top', '.news-card', '.mc_vtvc', '.dg_u', '.imgpt', 'li.sa_sg', '.b_entityTP'],
+      thread: 'li.b_algo, li.b_ans, .b_top, .news-card, .mc_vtvc, .dg_u, .imgpt, .b_entityTP',
     },
     {
       hosts: ['duckduckgo.com'],
       cards: ['article', 'li[data-layout]', '[data-testid="result"]', '.module', '.tile', 'li.acp'],
+      thread: 'article, li[data-layout], [data-testid="result"], .module, .tile',
     },
     {
       hosts: ['twitch.tv', 'kick.com'],
@@ -191,24 +201,34 @@
         '.chat-entry', '.search-result-card', '[data-chat-entry]', '.vod-message', '.video-chat__message',
       ],
       signals: ['[data-a-target="stream-title"]', '[data-a-target="stream-game-link"]', 'h1.tw-title'],
+      main: '.video-player, [data-a-target="video-player"], #video-player',
+      thread: '.chat-line__message, [data-a-target="chat-line-message"], .vod-message, .video-chat__message, .chat-entry, .search-result-card',
     },
     {
       hosts: ['bsky.app'],
+      // Virtualised feed: hide mode falls back to blur until live-checked.
+      noHide: true,
       keep: 'a[href^="/profile/"]',
       by: 'a[href^="/profile/"]',
       cards: ['[data-testid^="feedItem-"]', '[data-testid^="postThreadItem-"]', '[data-testid="trendingTopic"]', 'a[href^="/hashtag/"]'],
+      thread: '[data-testid^="postThreadItem-"], [data-testid^="feedItem-"]',
     },
     {
       hosts: ['linkedin.com'],
       cards: ['.feed-shared-update-v2', 'div[data-urn]', 'li.reusable-search__result-container', 'article', '.comments-comment-entity', '.comments-comment-item', 'article.comments-comment-item', '.news-module__storyline'],
+      main: '.feed-shared-update-v2, article',
+      thread: '.comments-comment-entity, .comments-comment-item, li.reusable-search__result-container',
     },
     {
       hosts: ['news.ycombinator.com'],
       cards: ['tr.athing', 'tr.comtr', 'table.fatitem'],
+      main: 'table.fatitem',
+      thread: 'tr.comtr',
     },
     {
       hosts: ['discord.com'],
       cards: ['li[id^="chat-messages"]', 'li[class*="containerDefault"]', 'li[class*="channel"]', 'div[class*="embedFull"]'],
+      thread: 'li[id^="chat-messages"]',
     },
     {
       hosts: ['pinterest.'],
@@ -217,6 +237,7 @@
     {
       hosts: ['web.telegram.org'],
       cards: ['.message', '.bubble', '.ListItem', '.chatlist-chat'],
+      thread: '.message, .bubble',
     },
     {
       hosts: ['steampowered.com', 'steamcommunity.com'],
@@ -239,7 +260,7 @@
   }
 
   // extra: per-site fixes from the daily rules file, { host: { cards, signals,
-  // keep, by, comments, blocks, plain, live, leave, whole, rows: [{ in, only, open }], off: [paths] } }. Cards and signals are
+  // keep, by, comments, blocks, plain, live, leave, whole, main, thread, rows: [{ in, only, open }], off: [paths], noHide } }. Cards and signals are
   // added to what is built in; the rest replace it. It is data only: selectors and nothing else.
   function adapterFor(hostname, extra) {
     const host = String(hostname || '').toLowerCase();
@@ -254,8 +275,11 @@
     const signals = found?.signals ? [...found.signals] : [];
     const out = { by: found?.by || null, comments: found?.comments || null, keep: found?.keep || null, byAttr: found?.byAttr || null,
       blocks: found?.blocks || null, plain: found?.plain || null, live: found?.live || null, tag: found?.tag || null,
-      leave: found?.leave || null, whole: found?.whole || null, rows: found?.rows || null, elsewhere: found?.elsewhere || null, off: found?.off || null };
+      leave: found?.leave || null, whole: found?.whole || null, main: found?.main || null, thread: found?.thread || null,
+      rows: found?.rows || null, elsewhere: found?.elsewhere || null, off: found?.off || null,
+      noHide: found?.noHide === true };
     let fixed = false;
+    let sawNoHide = false;
     const lists = { cards, signals };
     const { SITE_LIST_KEYS, SITE_SEL_KEYS } = globalThis.GSB;
     for (const [h, fix] of Object.entries(extra || {})) {
@@ -273,8 +297,12 @@
         const off = fix.off.filter((p) => typeof p === 'string' && p.startsWith('/'));
         if (off.length) out.off = off;
       }
+      if (typeof fix.noHide === 'boolean') {
+        out.noHide = fix.noHide;
+        sawNoHide = true;
+      }
     }
-    const hasFix = fixed && (cards.length || signals.length || out.rows?.length || out.off?.length || SITE_SEL_KEYS.some((k) => out[k]));
+    const hasFix = fixed && (cards.length || signals.length || out.rows?.length || out.off?.length || sawNoHide || SITE_SEL_KEYS.some((k) => out[k]));
     if (!found && !hasFix) return null;
     return { cards: cards.length ? cards.join(',') : ':not(*)', signals: signals.length ? signals.join(',') : null, ...out };
   }
