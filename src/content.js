@@ -585,6 +585,17 @@
     return Math.floor((gap + 2) / 2);
   }
 
+  // Actual corner radius in pixels; a round/pill radius (>= 40% of the shorter
+  // side, such as 9999px or 50%) is kept only for small round avatars (<= 128px).
+  function cornerPx(raw, box) {
+    const n = parseFloat(raw) || 0;
+    const m = Math.min(box.width || 0, box.height || 0);
+    return !n || !m ? n : Math.min(String(raw).includes('%') ? (n / 100) * m : n, m / 2);
+  }
+  const isRound = (raw, box) => { const m = Math.min(box.width || 0, box.height || 0); return m > 0 && cornerPx(raw, box) >= m * 0.4; };
+  const smallRound = (box, raw) => box.width <= ROUND_PICTURE_MAX && box.height <= ROUND_PICTURE_MAX
+    && Math.abs(box.width - box.height) <= Math.max(12, Math.min(box.width, box.height) * 0.25) && isRound(raw, box);
+
   // The corner radius of what sits in the card's own top left corner (its
   // thumbnail, as a rule), and whether a square picture fills that corner.
   function cornerOf(el, box) {
@@ -592,9 +603,12 @@
     for (let i = 0; n && i < 6; i++, n = n.firstElementChild) {
       const r = n.getBoundingClientRect();
       if (Math.abs(r.left - box.left) > 1 || Math.abs(r.top - box.top) > 1) break;
-      const cs = getComputedStyle(n);
-      const radius = parseFloat(cs.borderTopLeftRadius) || 0;
-      if (radius) return { radius, square: false };
+      const raw = getComputedStyle(n).borderTopLeftRadius;
+      const radius = cornerPx(raw, r);
+      if (radius) {
+        if (isRound(raw, r) && !smallRound(box, raw)) break;
+        return { radius, square: false };
+      }
       if (n.matches(PART_MEDIA)) return { radius: 0, square: true };
     }
     return { radius: 0, square: false };
@@ -621,7 +635,9 @@
   // [inset, radius] for a framed card. The close neighbours it measured
   // against are added to around, when given.
   function frameFor(el, cs, box, around) {
-    const own = parseFloat(cs.borderTopLeftRadius) || 0;
+    const raw = cs.borderTopLeftRadius;
+    const own = cornerPx(raw, box);
+    const keepRound = smallRound(box, raw);
     // A card with a border of its own takes the frame on that border, with the
     // border's corners. Drawn 4px outside it, the two lines read as a double
     // frame. (The frame is placed from inside the card's border, so the border's
@@ -629,7 +645,7 @@
     const line = ownBorder(el, cs, box);
     if (line !== null && !clipsPaint(cs)) {
       const w = ['Top', 'Right', 'Bottom', 'Left'].map((k) => parseFloat(cs[`border${k}Width`]) || 0);
-      return [w.every((v) => v === w[0]) ? `${-w[0]}px` : w.map((v) => `${-v}px`).join(' '), line];
+      return [w.every((v) => v === w[0]) ? `${-w[0]}px` : w.map((v) => `${-v}px`).join(' '), isRound(line, box) && !smallRound(box, line) ? '12px' : line];
     }
     if (clipsPaint(cs)) {
       // A card that clips its own paint would cut off a frame drawn outside
@@ -638,7 +654,7 @@
       // very edge, the frames of two posts in a row touch and read as one
       // thick line. Any other takes the frame on its edge, with its corners.
       if (!own && box.width >= 240 && box.height >= 96) return ['4px', '12px'];
-      return ['0px', cs.borderRadius || '0px'];
+      return ['0px', isRound(raw, box) && !keepRound ? '12px' : (cs.borderRadius || '0px')];
     }
     const room = clipRoom(el, box, FRAME_OUT);
     const { gap, near } = neighbourGaps(el, box);
@@ -648,8 +664,9 @@
     // The frame's corners follow the card's, or those of the thumbnail in its
     // corner, plus the distance out. A square picture that fills the corner
     // keeps them tight, so its corners do not poke out past the line.
-    const corner = own ? null : cornerOf(el, box);
-    const radius = own ? Math.max(4, own + least)
+    const useOwn = own && (!isRound(raw, box) || keepRound);
+    const corner = useOwn ? null : cornerOf(el, box);
+    const radius = useOwn ? Math.max(4, own + least)
       : corner.radius ? Math.max(4, corner.radius + least)
         : corner.square ? 4 + 2 * Math.max(0, least)
           : Math.max(8, 12 + least);
@@ -898,7 +915,7 @@
       const el = frameable(rawEl);
       if (opts.asMedia) mediaBoxes.add(el);
       if (stateOf(el)) continue;
-      if (shown.size && !byHand.has(el) && hasIdentity(el) && shown.has(fingerprint(el))) {
+      if (kept.shown.size && !byHand.has(el) && hasIdentity(el) && kept.shown.has(fingerprint(el))) {
         markZero.push(el);
         continue;
       }
@@ -1464,8 +1481,24 @@
     withBatch(() => {
       for (const m of matches) flag(m);
       boxMedia(node);
+      applyBlocked(node);
     });
     return matches.length;
+  }
+
+  // Items the person hid by hand on an earlier visit come back hidden. Only
+  // the site's own cards are fingerprinted, and only while a block is saved.
+  function applyBlocked(node) {
+    if (!adapter || !kept.blocked.size || !node?.querySelectorAll) return;
+    const cards = [...node.querySelectorAll(adapter.cards)];
+    if (node.matches?.(adapter.cards)) cards.push(node);
+    for (const c of cards) {
+      if (stateOf(c) || byHand.has(c) || !kept.blocked.has(fingerprint(c))) continue;
+      const card = frameable(c);
+      if (stateOf(card)) continue;
+      byHand.add(card);
+      blur(card);
+    }
   }
 
   // A hidden card whose content changed (sites reuse elements as you scroll).
@@ -1811,11 +1844,14 @@
   }
 
   // Hidden because the person said so. It names nothing the matcher knows, so
-  // a recheck must not clear it. It lasts until the page is loaded again.
+  // a recheck must not clear it. An item with enough identity stays hidden on
+  // later visits too (its print is saved); one without lasts until a reload.
   const byHand = new WeakSet();
   function hideByHand(el) {
     const card = frameable(pickTarget(el) || lineOf(el, null) || el);
-    forget(fingerprint(card));
+    const print = fingerprint(card);
+    forget(print);
+    if (hasIdentity(card)) remember(print, 'blocked');
     ownZero.delete(card);
     if (stateOf(card) === '0') card.removeAttribute('data-gsb');
     // Capture position and size before hide mode sets display: none.
@@ -1836,7 +1872,10 @@
     const wasMediaBox = mediaBoxes.has(el);
     const id = fileReport('overblock', el, howHidden(el), prevState);
     const print = hasIdentity(el) ? fingerprint(el) : null;
-    if (print) remember(print);
+    if (print) {
+      remember(print);
+      forget(print, 'blocked');
+    }
     byHand.delete(el);
     clear(el);
     ownZero.add(el);
@@ -2105,39 +2144,45 @@
     }
     return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
   }
+  // Fingerprints kept in this browser, in storage.local: items the person said
+  // are not spoilers ("shown") and items they hid by hand ("blocked"). Each
+  // list keeps its newest SHOWN_MAX.
   const SHOWN_MAX = 300;
-  let shown = new Set(); // fingerprints of items the person said are not spoilers
-  function remember(print) {
-    shown.add(print);
-    const list = [...shown].slice(-SHOWN_MAX);
-    shown = new Set(list);
+  const kept = { shown: new Set(), blocked: new Set() };
+  function remember(print, key = 'shown') {
+    kept[key].add(print);
+    const list = [...kept[key]].slice(-SHOWN_MAX);
+    kept[key] = new Set(list);
     if (!alive()) return;
     try {
-      api.storage.local.set({ shown: list }).catch(() => {});
+      api.storage.local.set({ [key]: list }).catch(() => {});
     } catch {}
   }
-  function forget(print) {
-    if (!print || !shown.delete(print)) return;
-    const list = [...shown];
+  function forget(print, key = 'shown') {
+    if (!print || !kept[key].delete(print)) return;
+    const list = [...kept[key]];
     if (!alive()) return;
     try {
-      api.storage.local.set({ shown: list }).catch(() => {});
+      api.storage.local.set({ [key]: list }).catch(() => {});
     } catch {}
   }
   function loadShown() {
     if (!alive()) return;
     try {
-      api.storage.local.get({ shown: [] }).then((v) => {
-        shown = new Set(Array.isArray(v.shown) ? v.shown : []);
-        if (!shown.size) return;
+      api.storage.local.get({ shown: [], blocked: [] }).then((v) => {
+        kept.shown = new Set(Array.isArray(v.shown) ? v.shown : []);
+        kept.blocked = new Set(Array.isArray(v.blocked) ? v.blocked : []);
         // Anything hidden before the list arrived is put right.
-        for (const el of [...blurred]) {
-          if (!byHand.has(el) && hasIdentity(el) && shown.has(fingerprint(el))) {
-            clear(el);
-            ownZero.add(el);
-            el.setAttribute('data-gsb', '0');
+        if (kept.shown.size) {
+          for (const el of [...blurred]) {
+            if (!byHand.has(el) && hasIdentity(el) && kept.shown.has(fingerprint(el))) {
+              clear(el);
+              ownZero.add(el);
+              el.setAttribute('data-gsb', '0');
+            }
           }
         }
+        if (active && kept.blocked.size) withBatch(() => applyBlocked(root));
         report();
       }, () => {});
     } catch {}
@@ -2304,7 +2349,10 @@
     p.undo.addEventListener('click', () => {
       const u = p.undoState;
       if (!u) return;
-      if (u.print) forget(u.print);
+      if (u.print) {
+        forget(u.print);
+        if (u.wasByHand) remember(u.print, 'blocked'); // back to how it was: a saved block
+      }
       if (p.id) {
         const dropId = p.id;
         editReports((list) => {
@@ -2463,8 +2511,11 @@
     const pick = (sel, forceBlur) => {
       if (!sel) return;
       const list = [];
-      if (scope.nodeType === 1 && scope.matches(sel)) list.push(scope);
-      else if (scope.querySelectorAll) for (const el of scope.querySelectorAll(sel)) list.push(el);
+      if (scope.nodeType === 1) {
+        const match = scope.matches(sel) ? scope : scope.closest(sel);
+        if (match) list.push(match);
+      }
+      if (!list.length && scope.querySelectorAll) for (const el of scope.querySelectorAll(sel)) list.push(el);
       for (const el of list) {
         if (el.closest(SKIP_SEL) || el.closest(NAVIGATION)) continue;
         if (adapter.leave && closestAcross(el, adapter.leave)) continue;
@@ -3270,7 +3321,8 @@
         }
         if (msg?.type === 'pick') {
           setPick(!!msg.on);
-          if (isTop) respond({ picking });
+          // Why a pick asked for did not start, for the menu to say.
+          if (isTop) respond({ picking, why: msg.on && !picking ? (active ? 'covered' : 'off') : undefined });
         }
         if (msg?.type === 'menuAction') menuAction();
         if (msg?.type === 'cover') onCover(msg.on);

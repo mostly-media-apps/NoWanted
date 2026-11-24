@@ -14,7 +14,7 @@
   <a href="#firefox"><img alt="Firefox: in review" src="https://img.shields.io/badge/Firefox-in%20review-2b2236?style=flat-square&logo=firefoxbrowser&logoColor=ededed&labelColor=100d15"></a>
   <a href="#safari"><img alt="Safari: coming soon" src="https://img.shields.io/badge/Safari-coming%20soon-2b2236?style=flat-square&logo=safari&logoColor=ededed&labelColor=100d15"></a>
   <a href="#privacy"><img alt="Data collected: none" src="https://img.shields.io/badge/data%20collected-none-ff5aa8?style=flat-square&labelColor=100d15"></a>
-  <img alt="Version 1.2.0" src="https://img.shields.io/badge/version-1.2.0-2b2236?style=flat-square&labelColor=100d15">
+  <img alt="Version 1.2.1" src="https://img.shields.io/badge/version-1.2.1-2b2236?style=flat-square&labelColor=100d15">
   <a href="https://ko-fi.com/mostlymedia"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support-2b2236?style=flat-square&logo=kofi&logoColor=ededed&labelColor=100d15"></a>
 </p>
 
@@ -71,7 +71,7 @@ Videos, Shorts, Reels, TikToks, posts, comments, search results, headlines and a
 
 [Add No Wanted from the Chrome Web Store](https://chromewebstore.google.com/detail/no-wanted-gta-6-spoiler-b/hjcjdahljbanoldnfoobemonocojfnpd). The store can be a version behind this page. To install the newest build by hand:
 
-1. Download **`nowanted-chrome-1.2.0.zip`** from the [Releases](../../releases) page and unzip it
+1. Download **`nowanted-chrome-1.2.1.zip`** from the [Releases](../../releases) page and unzip it
 2. Open <kbd>chrome://extensions</kbd> and turn on **Developer mode** (top right)
 3. Click **Load unpacked** and pick the unzipped folder
 4. Pin No Wanted from the puzzle-piece menu so its button stays in the toolbar
@@ -81,7 +81,7 @@ Videos, Shorts, Reels, TikToks, posts, comments, search results, headlines and a
 
 No Wanted is in review on Firefox Add-ons, and this section will link to it once it's live. To try it before then:
 
-1. Download **`nowanted-firefox-1.2.0.zip`** from [Releases](../../releases)
+1. Download **`nowanted-firefox-1.2.1.zip`** from [Releases](../../releases)
 2. Open <kbd>about:debugging#/runtime/this-firefox</kbd>
 3. Click **Load Temporary Add-on** and pick the zip
 

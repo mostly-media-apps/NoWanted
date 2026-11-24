@@ -327,15 +327,18 @@ function set(patch) {
 
 // A save that was cut short or refused is said at the foot of the menu, and
 // the menu then shows what is really stored.
+// The same foot note says why a pick could not start.
 let saveNoteTimer = 0;
-onSaved(async (result) => {
-  const text = saveNote(result);
+function footNote(text) {
   const note = $('save-note');
   clearTimeout(saveNoteTimer);
   if (!text) return void (note.hidden = true);
   note.textContent = text;
   note.hidden = false;
   saveNoteTimer = setTimeout(() => { note.hidden = true; }, 12000);
+}
+onSaved(async (result) => {
+  footNote(saveNote(result));
   if (!result.ok) { S = await loadSettings(); draw(); }
 });
 
@@ -496,16 +499,29 @@ $('reload-tab').addEventListener('click', async () => {
   }
 });
 
+// Straight to the tab (every frame), not through the background, which can
+// be asleep or stuck. The top frame answers whether the pick started; if it
+// didn't, the menu stays open and says why.
+const PICK_WHY = {
+  off: 'No Wanted is off on this site',
+  covered: 'This page is covered. Show it first, then pick',
+  unreachable: 'Can’t reach this page. Reload it and try again',
+};
 $('pick-item').addEventListener('click', async () => {
   const next = !picking;
   picking = next;
   drawHome();
+  let answer = null;
   if (tabId != null) {
     try {
-      await api.runtime.sendMessage({ type: 'pick', tabId, on: next });
+      answer = await api.tabs.sendMessage(tabId, { type: 'pick', on: next });
     } catch {}
   }
-  if (next) window.close();
+  if (!next) return;
+  if (answer?.picking) return void window.close();
+  picking = false;
+  drawHome();
+  footNote(PICK_WHY[answer?.why] || PICK_WHY.unreachable);
 });
 
 $('settings').addEventListener('click', () => api.runtime.openOptionsPage());

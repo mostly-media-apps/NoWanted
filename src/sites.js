@@ -102,6 +102,14 @@
       // The name of the person you are talking to, the headers and the box you
       // write in are never hidden, whatever they say.
       leave: '[data-testid="dm-inbox-header"], [data-testid="dm-conversation-header"], [data-testid="dm-conversation-header-item"], [data-testid="dm-composer-container"]',
+      // X's media viewer (/status/<id>/video/1) mounts the player in a dialog
+      // outside <main> and <article> (either [data-testid="videoPlayer"] on
+      // classic X or a bare div wrapping <video> on X's newer Media Viewer).
+      main: ':is([role="dialog"], [aria-modal="true"]) :is([data-testid="videoPlayer"], [data-testid="videoComponent"], div:has(> video):not([data-testid="videoPlayer"] *, [data-testid="videoComponent"] *))',
+      signals: [
+        ':is([role="dialog"], [aria-modal="true"]) :is(li:first-child, [data-testid="cellInnerDiv"]:first-child) article',
+        ':is([role="dialog"], [aria-modal="true"]) section > article:first-of-type',
+      ],
       thread: 'main article[data-testid="tweet"], main [data-testid="UserCell"]',
     },
     {
