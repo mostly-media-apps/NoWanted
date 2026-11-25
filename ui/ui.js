@@ -12,7 +12,7 @@ export async function loadSettings() {
 // lost whole, and the page is told (see onSaved) so it can say so. A save the
 // browser refuses is told the same way.
 const LIST_BYTES = 7600;
-const LISTS = ['extraTerms', 'sources', 'offSites'];
+const LISTS = ['extraTerms', 'sources', 'offSites', 'onSites'];
 const bytes = (v) => new TextEncoder().encode(JSON.stringify(v)).length;
 export function fitList(list) {
   const out = [];

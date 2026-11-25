@@ -178,9 +178,10 @@ input[type="date"]:focus-visible { outline: 2px solid var(--accent); outline-off
 .rows button { height: 28px; margin-right: -8px; padding: 0 8px; border-radius: 6px; background: none; box-shadow: none; font-weight: 400; font-size: 13px; color: var(--text-2); }
 .rows button:hover { color: var(--text); background: var(--raised); }
 /* A long list of your own scrolls inside its card and leaves the board alone. */
-#sources, #sites { max-height: 160px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; border-top: 1px solid var(--line); }
-#sources button, #sites button { margin-right: 0; }
-#add-source, #add-site { grid-template-columns: 1fr auto; gap: 8px; }
+#sources, #sites, #on-sites { max-height: 160px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; border-top: 1px solid var(--line); }
+#sources button, #sites button, #on-sites button { margin-right: 0; }
+#add-source, #add-site, #add-on-site { grid-template-columns: 1fr auto; gap: 8px; }
+.site-all { padding-top: 16px; border-top: 1px solid var(--line); }
 #source-error:empty, #rules-date:empty { display: none; }
 
 /* ---- narrower windows: the scene becomes a band across the top ---- */

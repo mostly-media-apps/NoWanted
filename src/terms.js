@@ -110,6 +110,8 @@
     extraTerms: [],
     sources: PRESETS.map((p) => p.value), // sites, @handles and r/subreddits that are always blurred
     offSites: [],
+    onSites: [], // extra sites opted into full blocking beyond default-on adapters and blatant articles
+    allSites: false, // check all other websites instead of only default-on sites and blatant articles
     frame: 'sunset', // sunset | pink | white | gray
     tag: 'Spoilers', // the word in the corner of a hidden post
     badge: true, // the count on the toolbar button

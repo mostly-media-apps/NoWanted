@@ -157,9 +157,23 @@
     </div>
   </section>
 
+  <section class="card" aria-labelledby="on-sites-h">
+    <h2 id="on-sites-h">Websites to check</h2>
+    <p class="choice-note" id="on-sites-note">Social sites and obvious GTA 6 articles are checked by default. Add other sites here to check them too</p>
+    <ul class="rows" id="on-sites"></ul>
+    <form id="add-on-site" class="field">
+      <input type="text" id="new-on-site" aria-label="Website to check" placeholder="example.com" autocomplete="off" spellcheck="false">
+      <button type="submit">Add</button>
+    </form>
+    <div class="toggle site-all">
+      <span><span id="l-all-sites">Check all other websites</span><span class="choice-note">Check every site, not only social sites and articles</span></span>
+      <label class="switch"><input type="checkbox" id="allSites" aria-labelledby="l-all-sites"><span class="track"><span class="knob"></span></span></label>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Sites left alone</h2>
-    <p class="choice-note" id="sites-empty"><strong class="bold-name">No Wanted</strong> runs on every site. Add one here to switch it off there</p>
+    <p class="choice-note" id="sites-empty"><strong class="bold-name">No Wanted</strong> stays off on sites you add here, social sites included</p>
     <ul class="rows" id="sites"></ul>
     <form id="add-site" class="field">
       <input type="text" id="new-site" aria-label="Site" placeholder="example.com" autocomplete="off" spellcheck="false">

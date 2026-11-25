@@ -53,6 +53,7 @@ let S;
 let tabId = null;
 let site = null;
 let onPage = null;
+let scope = null;
 let goneOnPage = 0;
 let tabBlur = false;
 let siteAbout = false;
@@ -198,15 +199,16 @@ function drawApps() {
 
 const TWO_COPIES_NOTE = 'Two copies of No Wanted are running on this page. Turn one off in your browser’s extensions';
 
-function homeState({ enabled, offSites = [], mode = 'blur', reveal = 'click', site: s = null, onPage: n = null, gone = 0, tabBlur: blurredHere = false, siteAbout: about = false, siteAboutShown: aboutShown = false, twoCopies: dup = false, picking: pickOn = false, safari = IS_SAFARI, touch = IS_TOUCH, needsAccess: need = false }) {
+function homeState({ enabled, offSites = [], scope: siteScope = null, mode = 'blur', reveal = 'click', site: s = null, onPage: n = null, gone = 0, tabBlur: blurredHere = false, siteAbout: about = false, siteAboutShown: aboutShown = false, twoCopies: dup = false, picking: pickOn = false, safari = IS_SAFARI, touch = IS_TOUCH, needsAccess: need = false }) {
   const offHere = Boolean(s && offSites.some((h) => s === h || s.endsWith('.' + h)));
-  const showBlurred = Boolean(enabled && !offHere && mode === 'hide' && n !== null && gone > 0 && !blurredHere);
-  const showPage = Boolean(enabled && !offHere && reveal !== 'locked' && n !== null && about && !aboutShown);
+  const defaultOffHere = Boolean(s && !offHere && siteScope === 'articles-only' && (n === null || n === 0));
+  const showBlurred = Boolean(enabled && !offHere && !defaultOffHere && mode === 'hide' && n !== null && gone > 0 && !blurredHere);
+  const showPage = Boolean(enabled && !offHere && !defaultOffHere && reveal !== 'locked' && n !== null && about && !aboutShown);
   const showReload = Boolean(s && n === null && !(safari && need));
-  const showPick = Boolean(enabled && !offHere && n !== null);
+  const showPick = Boolean(enabled && !offHere && !defaultOffHere && n !== null);
   const copyNote = dup ? TWO_COPIES_NOTE : '';
   if (!enabled) return { line: 'Off. Nothing is being hidden', accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
-  if (offHere) return { line: `Off on ${s}`, accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
+  if (offHere || defaultOffHere) return { line: `Off on ${s}`, accessNote: copyNote, showBlurred: false, showPage: false, showReload, showPick: false, picking: false };
   if (n !== null) return { line: `${number(n)} on this page`, accessNote: copyNote, showBlurred, showPage, showReload: false, showPick, picking: Boolean(pickOn) };
   if (safari && need && !s) {
     return {
@@ -230,6 +232,7 @@ function drawHome() {
   const { line, accessNote, showBlurred, showPage, showReload, showPick, picking: pickOn } = homeState({
     enabled: S.enabled,
     offSites: S.offSites,
+    scope: tabOverride && 'scope' in tabOverride ? tabOverride.scope : scope,
     mode: tabOverride && 'mode' in tabOverride ? tabOverride.mode : S.mode,
     reveal: tabOverride && 'reveal' in tabOverride ? tabOverride.reveal : S.reveal,
     site: tabOverride ? tabOverride.site : site,
@@ -440,7 +443,10 @@ $('add').addEventListener('submit', (e) => {
   document.querySelector('.entry').classList.remove('bad');
   $('handle').value = '';
   if (open.id === 'allow') {
-    if (!S.offSites.includes(value)) set({ offSites: [...S.offSites, value] });
+    const patch = {};
+    if (!S.offSites.includes(value)) patch.offSites = [...S.offSites, value];
+    if (S.onSites?.includes(value)) patch.onSites = S.onSites.filter((h) => h !== value);
+    if (Object.keys(patch).length) set(patch);
     else drawSheet();
   } else if (!S.sources.some((v) => same(v, value))) set({ sources: [...S.sources, value] });
   else drawSheet();
@@ -533,6 +539,7 @@ async function readTab() {
   let nextTabId = null;
   let nextSite = null;
   let nextOnPage = null;
+  let nextScope = null;
   let nextGone = 0;
   let nextTabBlur = false;
   let nextSiteAbout = false;
@@ -560,6 +567,7 @@ async function readTab() {
       const answer = await api.tabs.sendMessage(tab.id, { type: 'count' }, { frameId: 0 });
       if (answer) {
         nextOnPage = answer.n;
+        nextScope = answer.scope || null;
         nextGone = answer.gone || 0;
         nextTabBlur = !!answer.tabBlur;
         nextSiteAbout = !!answer.siteAbout;
@@ -573,6 +581,7 @@ async function readTab() {
   tabId = nextTabId;
   site = nextSite;
   onPage = nextOnPage;
+  scope = nextScope;
   goneOnPage = nextGone;
   tabBlur = nextTabBlur;
   siteAbout = nextSiteAbout;
@@ -608,6 +617,7 @@ onSettings((next) => {
 });
 setInterval(async () => {
   const prevPage = onPage;
+  const prevScope = scope;
   const prevSite = site;
   const prevGone = goneOnPage;
   const prevBlur = tabBlur;
@@ -616,7 +626,7 @@ setInterval(async () => {
   const prevCopies = twoCopies;
   const prevNeed = needsAccess;
   await readTab();
-  if (onPage !== prevPage || site !== prevSite || goneOnPage !== prevGone || tabBlur !== prevBlur || siteAbout !== prevAbout || siteAboutShown !== prevAboutShown || twoCopies !== prevCopies || needsAccess !== prevNeed) drawHome();
+  if (onPage !== prevPage || scope !== prevScope || site !== prevSite || goneOnPage !== prevGone || tabBlur !== prevBlur || siteAbout !== prevAbout || siteAboutShown !== prevAboutShown || twoCopies !== prevCopies || needsAccess !== prevNeed) drawHome();
 }, 1000);
 
 // Exposed for the tests.

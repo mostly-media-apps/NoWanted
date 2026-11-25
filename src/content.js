@@ -9,9 +9,21 @@
   const G = globalThis.GSB;
   const api = globalThis.browser ?? globalThis.chrome;
   const site = G.siteOf(location.hostname);
+  // A listed host covers its subdomains too (e.g. github.com matches docs.github.com).
+  const listed = (list) => !!list?.some((h) => site === h || site.endsWith('.' + h));
   // No Wanted's own site talks about the game on every line and spoils nothing.
   const OWN_SITES = ['nowanted.online'];
   let adapter = G.adapterFor(location.hostname);
+  // Gaming news sites run spoiler headlines on every front page, so they stay
+  // on by default like the adapter sites. Matches subdomains (cz.ign.com).
+  const NEWS_SITES = [
+    'ign.com', 'gamespot.com', 'kotaku.com', 'polygon.com', 'eurogamer.net',
+    'videogameschronicle.com', 'pushsquare.com', 'pcgamer.com', 'gamesradar.com',
+    'gamerant.com', 'thegamer.com', 'dexerto.com', 'vg247.com', 'rockpapershotgun.com',
+  ];
+  // Sites with a built-in or daily-rules adapter, and gaming news sites, stay
+  // on by default; kept in one place so the default-on set is easy to change.
+  const isDefaultOnSite = () => Boolean(adapter) || listed(NEWS_SITES);
   // The daily rules file, as the background saved it: extra words, always-blur
   // sources, per-site selectors and sites to stay off. Data only.
   let rulesRaw = null;
@@ -20,7 +32,7 @@
   const root = document.documentElement;
 
   let S = { ...G.DEFAULTS };
-  let src, re, loose;
+  let src, re, loose, blatantRe;
   const HIDDEN_PAGE_TITLE = 'Hidden page';
   let realTitle = null; // the page's own title while ours is in its place
   const pageTitle = () => (document.title && document.title !== HIDDEN_PAGE_TITLE ? document.title : realTitle ?? document.title);
@@ -36,16 +48,27 @@
     oldGame = G.aboutOldGame(G.urlText(location.href) + ' ' + pageTitle());
     re = G.buildMatcher(S.level, words, terms, false, oldGame);
     loose = G.buildMatcher(S.level, words, terms, true, oldGame);
+    blatantRe = G.buildMatcher('title', S.extraTerms, [], false, oldGame);
   }
   let oldGame = false;
   build();
-  let active = !OWN_SITES.includes(site);
+  let enabledHere = !OWN_SITES.includes(site);
+  let scanHere = enabledHere && isDefaultOnSite();
   let tabBlur = false; // temporary blur override for this tab until reload
   const useHide = () => S.mode === 'hide' && !tabBlur && !adapter?.noHide;
   let pageOn = false; // the whole page is covered
   let pageShown = false; // the person chose to see this page
+  let pageAbout = false; // a covered page the person chose to show anyway
   let siteAbout = false; // adapter site page is about the game (no whole-page cover)
   let siteAboutShown = false; // the person chose "Show this page" on this tab until reload
+  const shouldScan = () => Boolean(scanHere || (enabledHere && pageAbout));
+  function siteScope() {
+    if (!enabledHere) return 'off';
+    if (isDefaultOnSite()) return 'adapter';
+    if (S.allSites) return 'all';
+    if (listed(S.onSites)) return 'opt-in';
+    return 'articles-only';
+  }
   let lastUrl = location.href;
   let added = {}; // blurs since the last report, by kind
   const counted = new WeakSet(); // each thing counts once, even when re-hidden
@@ -86,6 +109,8 @@
   const CARD_ROLE = new Set(['article', 'listitem', 'row', 'option', 'comment']);
 
   const hit = (text) => !!text && text.length >= 4 && re.test(G.normalize(text));
+  // Explicit title-level match (+ user's extra words) for blatant articles on other sites.
+  const blatantHit = (text) => !!text && text.length >= 4 && blatantRe.test(G.normalize(text));
   // Might a match be somewhere inside? Never says no when hit() would say yes.
   const maybe = (text) => !!text && text.length >= 4 && loose.test(G.normalize(text));
 
@@ -278,7 +303,7 @@
   // (hold.js sends the event; nothing else shows that it happened).
   function onShadow(e) {
     const host = e.composedPath()[0];
-    if (!active || !host?.shadowRoot || watchedRoots.has(host.shadowRoot)) return;
+    if (!shouldScan() || !host?.shadowRoot || watchedRoots.has(host.shadowRoot)) return;
     const found = [];
     scanShadow(host.shadowRoot, found);
     if (found.length) withBatch(() => { for (const m of found) flag(m); });
@@ -1476,7 +1501,7 @@
   }
 
   function scan(node) {
-    if (!active) return 0;
+    if (!shouldScan()) return 0;
     const matches = collect(node, []);
     withBatch(() => {
       for (const m of matches) flag(m);
@@ -1562,7 +1587,7 @@
   const HOLD = 'data-gsb-hold';
   // And the mark on <html> that tells hold.js No Wanted is on and stopping
   // media, so it can also refuse a video it finds inside a hidden post itself.
-  const quiet = () => root.toggleAttribute('data-gsb-quiet', active && S.muteMedia);
+  const quiet = () => root.toggleAttribute('data-gsb-quiet', (shouldScan() || pageOn || topCover) && S.muteMedia);
   // Where hold.js is not running (an older Safari), a site can still start the
   // video again each time it is paused. After a few rounds the pausing stops
   // and the video is only kept silent, so the page never gets stuck in a loop.
@@ -1580,7 +1605,7 @@
   }
 
   function gate(m) {
-    if ((active || topCover) && S.muteMedia && isHidden(m)) {
+    if ((enabledHere || topCover) && S.muteMedia && isHidden(m)) {
       if (!gated.has(m)) {
         gated.set(m, m.muted);
         heldCount++;
@@ -1820,6 +1845,7 @@
 
   let menuTarget = null; // { el, hidden } under the last right-click
   function noteMenuTarget(e) {
+    if (!shouldScan()) return;
     const path = e.composedPath();
     if ((bubble && path.includes(bubble.host)) || (panel && path.includes(panel.host))) return;
     const el = path.find((n) => n.nodeType === 1);
@@ -1832,6 +1858,7 @@
   // The menu has one entry, and what it does is decided here, from what was
   // under the pointer: the background cannot know that in time.
   function menuAction() {
+    if (!shouldScan()) return;
     const t = menuTarget;
     if (!t?.el?.isConnected) return;
     // Looked at again now: the item may have been hidden or shown since the right-click.
@@ -2054,7 +2081,7 @@
   }
 
   function setPick(on) {
-    const next = Boolean(on && active && !pageOn && !topCover);
+    const next = Boolean(on && shouldScan() && !pageOn && !topCover);
     if (picking === next) return;
     picking = next;
     picked = null;
@@ -2182,7 +2209,7 @@
             }
           }
         }
-        if (active && kept.blocked.size) withBatch(() => applyBlocked(root));
+        if (shouldScan() && kept.blocked.size) withBatch(() => applyBlocked(root));
         report();
       }, () => {});
     } catch {}
@@ -2371,7 +2398,7 @@
           blur(target, false, true);
         } else if (u.wasSiteAbout && siteAbout) {
           blur(target, false, false, u.forceBlur, true);
-        } else if (active) {
+        } else if (shouldScan()) {
           scan(target);
         }
         report();
@@ -2466,6 +2493,81 @@
     return !type || type === 'article' || type.startsWith('video');
   }
 
+  // On other sites (no adapter, not opted in), only blatant spoiler articles
+  // or videos get covered: explicit article/video page proof paired with an
+  // explicit title-level match (+ user's extra words) in title, single <h1>,
+  // or URL path (never ?query=).
+  const ARTICLE_LD_TYPES = new Set([
+    'article',
+    'newsarticle',
+    'blogposting',
+    'reportagenewsarticle',
+    'analysisnewsarticle',
+    'opinionnewsarticle',
+    'reviewnewsarticle',
+    'review',
+    'videoobject',
+  ]);
+
+  function hasArticleJsonLd() {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    if (!scripts.length) return false;
+    const hasType = (val, depth = 0) => {
+      if (!val || depth > 5) return false;
+      if (typeof val === 'string') {
+        const clean = val.trim().replace(/^https?:\/\/schema\.org\//i, '').toLowerCase();
+        return ARTICLE_LD_TYPES.has(clean);
+      }
+      if (Array.isArray(val)) return val.some((item) => hasType(item, depth + 1));
+      if (typeof val === 'object') {
+        if ('@type' in val && hasType(val['@type'], depth + 1)) return true;
+        if ('@graph' in val && hasType(val['@graph'], depth + 1)) return true;
+        if ('mainEntity' in val && hasType(val.mainEntity, depth + 1)) return true;
+        if ('mainEntityOfPage' in val && hasType(val.mainEntityOfPage, depth + 1)) return true;
+      }
+      return false;
+    };
+    for (const s of scripts) {
+      const text = s.textContent?.trim();
+      if (!text || text.length > 200000) continue;
+      try {
+        if (hasType(JSON.parse(text))) return true;
+      } catch {
+        // malformed JSON-LD on the page; ignore
+      }
+    }
+    return false;
+  }
+
+  function singleVisibleH1() {
+    const h1s = document.getElementsByTagName('h1');
+    if (h1s.length !== 1) return null;
+    return isVisible(h1s[0]) ? h1s[0] : null;
+  }
+
+  function hasArticleProof() {
+    const ogType = document.querySelector('meta[property="og:type"]')?.content?.trim().toLowerCase() || '';
+    if (ogType === 'article' || ogType.startsWith('video')) return true;
+    if (hasArticleJsonLd()) return true;
+    if (!ogType) {
+      const h1 = singleVisibleH1();
+      if (h1 && h1.closest('article')) return true;
+    }
+    return false;
+  }
+
+  function isBlatantArticle() {
+    if (!S.hidePages || pathOff() || isAccountFrame) return false;
+    if (!hasArticleProof()) return false;
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim() || '';
+    if (blatantHit(ogTitle)) return true;
+    if (blatantHit(pageTitle())) return true;
+    const h1 = singleVisibleH1();
+    if (h1 && blatantHit(h1.textContent)) return true;
+    if (blatantHit(G.urlText(location.origin + location.pathname))) return true;
+    return false;
+  }
+
   function isVisible(el) {
     // An element No Wanted itself hid with display:none ("h") was visible on
     // the page and must still count as a page signal / h1.
@@ -2507,7 +2609,7 @@
   }
 
   function scanSiteAbout(scope) {
-    if (!active || !siteAbout || !adapter) return;
+    if (!scanHere || !siteAbout || !adapter) return;
     const pick = (sel, forceBlur) => {
       if (!sel) return;
       const list = [];
@@ -2584,7 +2686,7 @@
         // cards recheck in place so cards naming the game stay blurred.
         if (adapter && !el.matches(adapter.cards)) {
           clear(el);
-          if (active) scan(el);
+          if (shouldScan()) scan(el);
         } else {
           recheck(el, true);
         }
@@ -2601,18 +2703,19 @@
   }
 
   function checkPage() {
-    const listed = active && !pathOff() && src.any && src.test(location.href);
-    if (listed) {
+    const isListed = enabledHere && !pathOff() && src.any && src.test(location.href);
+    if (isListed) {
       if (siteAbout) clearSiteAbout();
       const wantCover = !pageShown;
       if (wantCover && !pageOn) coverPage();
       else if (!wantCover && pageOn) uncoverPage();
       else if (wantCover) maskTitle();
+      syncObserver();
       return;
     }
     if (adapter) {
       if (pageOn) uncoverPage();
-      const wantSite = active && !siteAboutShown && !pageShown && pageIsAboutIt();
+      const wantSite = scanHere && !siteAboutShown && !pageShown && pageIsAboutIt();
       if (wantSite) {
         const entered = !siteAbout;
         siteAbout = true;
@@ -2622,13 +2725,21 @@
       } else if (siteAbout) {
         clearSiteAbout();
       }
+      syncObserver();
       return;
     }
     if (siteAbout) clearSiteAbout();
-    const want = active && !pageShown && pageIsAboutIt();
+    const want = enabledHere && !pageShown && (scanHere ? pageIsAboutIt() : isBlatantArticle());
     if (want && !pageOn) coverPage();
     else if (!want && pageOn) uncoverPage();
     else if (want) maskTitle();
+    syncObserver();
+  }
+
+  function attachVeil() {
+    if (!veil || veil.isConnected) return;
+    if (document.body) root.insertBefore(veil, document.body);
+    else root.appendChild(veil);
   }
 
   let pageCounted = '';
@@ -2640,9 +2751,11 @@
     }
     if (!veil) veil = buildVeil();
     veil.sync();
-    if (!veil.isConnected) root.appendChild(veil);
+    attachVeil();
     maskTitle();
+    quiet();
     gateAll(document);
+    syncObserver();
     tellFrames();
     report();
   }
@@ -2657,7 +2770,9 @@
   function onCover(on) {
     if (isTop || topCover === !!on) return;
     topCover = !!on;
+    quiet();
     gateAll(document);
+    syncObserver();
   }
   function askCover() {
     if (isTop) return;
@@ -2678,7 +2793,9 @@
     pageOn = false;
     veil?.remove();
     if (!siteAbout) unmaskTitle();
+    quiet();
     gateAll(document);
+    syncObserver();
     tellFrames();
     report();
   }
@@ -2706,18 +2823,20 @@
     if (G.aboutOldGame(G.urlText(location.href) + ' ' + document.title) === oldGame) return;
     build();
     for (const el of [...blurred]) recheck(el);
-    if (active) scan(root);
+    if (shouldScan()) scan(root);
     report();
   }
 
   // Lifts the page cover only. Everything boxed on the page stays boxed, and
   // since the page is about the game, so are its pictures and videos.
-  let pageAbout = false;
   function showPage() {
     pageShown = true;
     pageAbout = true;
     uncoverPage();
+    quiet();
+    syncObserver();
     boxMedia(document.documentElement);
+    scan(root);
   }
 
   // On a page shown anyway, a picture that arrives later (a feed loading more
@@ -2730,14 +2849,14 @@
   const LOOK_AGAIN_MS = [50, 500, 2000];
   function onLoad(e) {
     const m = e.target;
-    if (pageAbout && active && m && m.nodeType === 1 && m.matches('img,video,iframe')) boxMedia(m);
+    if (pageAbout && enabledHere && m && m.nodeType === 1 && m.matches('img,video,iframe')) boxMedia(m);
   }
 
   const VIDEO_FRAME = /youtube|youtu\.be|vimeo|twitch|tiktok|twitter|x\.com|instagram|facebook|streamable|dailymotion|jwplayer|brightcove/i;
   const MEDIA = 'img,video,canvas,iframe,svg,[style*="background-image"]';
   const SITE_PICTURES = 'nav,[role="navigation"],menu,[role="menu"],[role="menubar"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],[role="tablist"],[role="toolbar"],[role="tooltip"],[popover],[data-testid*="popover" i],[class*="popover" i]';
   function boxMedia(node) {
-    if (!pageAbout || !active || isAccountFrame || node.nodeType !== 1) return;
+    if (!pageAbout || !enabledHere || isAccountFrame || node.nodeType !== 1) return;
     const found = node.matches(MEDIA) ? [node] : [...node.querySelectorAll(MEDIA)];
     for (const m of found) {
       if (m.closest(HIDDEN) || m.closest(SKIP_SEL) || m.closest('[data-gsb="0"]')) continue;
@@ -2987,7 +3106,7 @@
     let reclaimed = false;
     const take = (h) => {
       if (!h.isConnected || blurred.has(h)) return;
-      if (!active) { clear(h); return; }
+      if (!shouldScan()) { clear(h); return; }
       blurred.add(h);
       const st = h.getAttribute('data-gsb');
       if (st !== '2' && st !== 'h') watcher?.observe(h);
@@ -3010,16 +3129,21 @@
 
   function onMutations(records) {
     if (location.href !== lastUrl) onUrlChange();
-    if (!active) {
-      if (everPruned) {
+    if (!shouldScan()) {
+      if (pageOn) attachVeil();
+      if (pageOn || topCover || everPruned) {
         for (const r of records) {
           if (r.type !== 'childList') continue;
-          for (const n of r.addedNodes) if (n.nodeType === 1) reclaimHidden(n, null);
+          for (const n of r.addedNodes) {
+            if (n.nodeType !== 1) continue;
+            if (pageOn || topCover) gateAll(n);
+            if (everPruned) reclaimHidden(n, null);
+          }
         }
       }
       return;
     }
-    if (pageOn && veil && !veil.isConnected) root.appendChild(veil);
+    if (pageOn) attachVeil();
 
     const stale = new Map(); // owner -> true if structural or outside an already-blurred part
     const fresh = new Set();
@@ -3097,21 +3221,39 @@
     if (heldCount) {
       for (const el of fresh) if (el.isConnected) syncHeld(el);
     }
-    if (active && siteAbout && fresh.size && (location.pathname.startsWith('/shorts') || [...siteAboutBlurs].some((el) => el.matches(SLIDE_SEL)))) syncSiteAbout(document);
+    if (scanHere && siteAbout && fresh.size && (location.pathname.startsWith('/shorts') || [...siteAboutBlurs].some((el) => el.matches(SLIDE_SEL)))) syncSiteAbout(document);
     if (sawRemoval && blurred.size) pruneBlurred();
     if (titleTouched) onTitleChange();
   }
 
   const observer = new MutationObserver(onMutations);
+  let observing = false;
+  function syncObserver() {
+    const want = shouldScan() || pageOn || topCover || everPruned;
+    if (want === observing) return;
+    observing = want;
+    if (want) observer.observe(document, OBSERVE);
+    else observer.disconnect();
+  }
 
+  let spaCheckTimer = 0;
   function onUrlChange() {
     lastUrl = location.href;
+    clearTimeout(spaCheckTimer);
+    spaCheckTimer = 0;
     if (document.title !== HIDDEN_PAGE_TITLE && realTitle !== null) realTitle = document.title;
     pageShown = cameFromAllowed();
     pageAbout = pageShown;
     build();
     checkPage();
-    if (active) scan(root);
+    syncObserver();
+    if (shouldScan()) scan(root);
+    else if (enabledHere && !pageOn) {
+      spaCheckTimer = setTimeout(() => {
+        spaCheckTimer = 0;
+        if (enabledHere && !scanHere && !pageOn) checkPage();
+      }, 250);
+    }
     if (heldCount) syncHeld(document);
   }
 
@@ -3165,7 +3307,7 @@
     if (tabBlur) return;
     tabBlur = true;
     clearAll();
-    if (active) {
+    if (shouldScan()) {
       if (siteAbout) syncSiteAbout(document);
       scan(root);
     }
@@ -3200,15 +3342,13 @@
     if (ready) apply(S); // before the settings arrive, they pick the rules up themselves
   }
 
+  let initialRan = false;
   function apply(next) {
-    const before = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R, useHide()]);
+    const before = JSON.stringify([S.level, S.extraTerms, S.sources, enabledHere, scanHere, S.hidePages, R, useHide()]);
     S = { ...G.DEFAULTS, ...next };
     R = readRules();
     adapter = G.adapterFor(location.hostname, R?.sites);
     build();
-    // An allowed site covers its subdomains too: allowing github.com also
-    // leaves gist.github.com and docs.github.com alone.
-    const listed = (list) => !!list?.some((h) => site === h || site.endsWith('.' + h));
     // "Stop hiding on": from that day on nothing is hidden. One page writes it
     // down (hiding off, the date cleared), so the menu can say so once.
     const over = G.endPassed(S);
@@ -3217,7 +3357,8 @@
         api.storage.sync.set(G.endPatch(S)).catch(() => {});
       } catch {}
     }
-    active = S.enabled && !over && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
+    enabledHere = S.enabled && !over && !listed(S.offSites) && !listed(R?.off) && !listed(OWN_SITES);
+    scanHere = enabledHere && (isDefaultOnSite() || listed(S.onSites) || S.allSites === true);
     look();
     root.toggleAttribute('data-gsb-locked', S.reveal === 'locked');
     if (S.reveal === 'locked') {
@@ -3230,27 +3371,40 @@
       if (S.maskTitle) maskTitle();
       else unmaskTitle();
     }
-    const after = JSON.stringify([S.level, S.extraTerms, S.sources, active, S.hidePages, R, useHide()]);
+    const after = JSON.stringify([S.level, S.extraTerms, S.sources, enabledHere, scanHere, S.hidePages, R, useHide()]);
     if (!ready) {
       ready = true;
-      if (!active) added = {};
+      if (!enabledHere) added = {};
+      if (!initialRan) {
+        initialRan = true;
+        checkPage();
+        if (shouldScan()) scan(root);
+        syncObserver();
+        report();
+        return;
+      }
       report();
     }
     if (before === after) {
-      gateAll(document);
+      if (shouldScan() || pageOn || topCover) gateAll(document);
+      syncObserver();
       return;
     }
+    clearTimeout(spaCheckTimer);
+    spaCheckTimer = 0;
     clearAll();
     for (const el of document.querySelectorAll('[data-gsb="0"]')) el.removeAttribute('data-gsb');
     pageShown = false;
+    pageAbout = false;
     siteAboutShown = false;
     checkPage();
-    if (active) scan(root);
+    if (shouldScan()) scan(root);
+    syncObserver();
     report();
   }
 
   function start() {
-    observer.observe(document, OBSERVE);
+    syncObserver();
     listenMedia(document);
     for (const type of ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'contextmenu']) {
       window.addEventListener(type, onPress, true);
@@ -3265,6 +3419,7 @@
       window.addEventListener(type, checkUrl, true);
     }
     document.addEventListener('DOMContentLoaded', () => {
+      if (!initialRan) return;
       followTitle();
       checkPage();
     });
@@ -3290,14 +3445,19 @@
 
     look();
     quiet();
-    checkPage();
-    scan(root);
-    report();
+    // Run immediately on default-on adapter sites to avoid first-paint flashes;
+    // on other sites, wait for settings so non-article web apps never flicker.
+    if (scanHere) {
+      initialRan = true;
+      checkPage();
+      scan(root);
+      report();
+    }
     loadShown();
     askCover();
 
     try {
-      api.storage.sync.get(G.DEFAULTS).then(apply, () => {});
+      api.storage.sync.get(G.DEFAULTS).then(apply, () => apply(G.DEFAULTS));
       api.storage.local.get('rules').then((v) => v?.rules && applyRules(v.rules), () => {});
       api.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.rules) return applyRules(changes.rules.newValue);
@@ -3310,19 +3470,19 @@
       });
       api.runtime.onMessage.addListener((msg, _sender, respond) => {
         if (msg?.type === 'ping') return void respond({ ok: true });
-        if (msg?.type === 'count' && isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+        if (msg?.type === 'count' && isTop) respond({ n: currentCount(), active: shouldScan(), scope: siteScope(), pageOn, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
         if (msg?.type === 'showBlurred') {
           showTabBlurred();
-          if (isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+          if (isTop) respond({ n: currentCount(), active: shouldScan(), scope: siteScope(), pageOn, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
         }
         if (msg?.type === 'showSitePage') {
           showSitePage();
-          if (isTop) respond({ n: currentCount(), active, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
+          if (isTop) respond({ n: currentCount(), active: shouldScan(), scope: siteScope(), pageOn, site, gone: goneCount(), tabBlur, siteAbout, siteAboutShown, twoCopies: hasSecondCopy(), picking });
         }
         if (msg?.type === 'pick') {
           setPick(!!msg.on);
           // Why a pick asked for did not start, for the menu to say.
-          if (isTop) respond({ picking, why: msg.on && !picking ? (active ? 'covered' : 'off') : undefined });
+          if (isTop) respond({ picking, why: msg.on && !picking ? (shouldScan() ? 'covered' : 'off') : undefined });
         }
         if (msg?.type === 'menuAction') menuAction();
         if (msg?.type === 'cover') onCover(msg.on);

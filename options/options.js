@@ -20,10 +20,11 @@ function draw() {
   $('blur-out').textContent = `${S.blur} px`;
   $('sample').style.setProperty('--sample-blur', `${S.blur}px`);
   for (const input of $('level').querySelectorAll('input')) input.checked = input.value === S.level;
-  for (const key of ['hidePages', 'muteMedia', 'maskTitle']) $(key).checked = S[key];
+  for (const key of ['hidePages', 'muteMedia', 'maskTitle', 'allSites']) $(key).checked = !!S[key];
   setSeg($('reveal'), S.reveal);
   if (document.activeElement !== $('extra')) $('extra').value = S.extraTerms.join('\n');
   drawSources();
+  drawOnSites();
   drawSites();
   drawEnd();
 }
@@ -94,6 +95,17 @@ function drawSources() {
   }
 }
 
+function drawOnSites() {
+  const list = $('on-sites');
+  list.replaceChildren();
+  for (const host of S.onSites) {
+    list.append(row(host, '', removeButton(host, () => set({ onSites: S.onSites.filter((h) => h !== host) }))));
+  }
+  $('on-sites-note').textContent = S.allSites
+    ? 'Every website is checked while the switch below is on. Your saved list stays here if you turn it off'
+    : 'Social sites and obvious GTA 6 articles are checked by default. Add other sites here to check them too';
+}
+
 function drawSites() {
   const list = $('sites');
   list.replaceChildren();
@@ -105,7 +117,9 @@ function drawSites() {
   name.textContent = 'No Wanted';
   $('sites-empty').replaceChildren(name, S.offSites.length
     ? ' is switched off on these sites'
-    : ' runs on every site. Add one here to switch it off there');
+    : S.allSites
+    ? ' checks every site right now. Add one here to switch it off there'
+    : ' stays off on sites you add here, social sites included');
 }
 
 function set(patch) {
@@ -137,7 +151,7 @@ $('blur').addEventListener('input', (e) => {
 });
 $('blur').addEventListener('change', (e) => set({ blur: Number(e.target.value) }));
 $('level').addEventListener('change', (e) => set({ level: e.target.value }));
-for (const key of ['hidePages', 'muteMedia', 'maskTitle']) {
+for (const key of ['hidePages', 'muteMedia', 'maskTitle', 'allSites']) {
   $(key).addEventListener('change', (e) => set({ [key]: e.target.checked }));
 }
 bindSeg($('mode'), (mode) => set({ mode }));
@@ -219,18 +233,36 @@ $('extra').addEventListener('input', (e) => {
   }, 400);
 });
 
+function parseHost(raw) {
+  const text = raw.trim().toLowerCase();
+  if (!text) return '';
+  try {
+    return G.siteOf(new URL(text.includes('://') ? text : `https://${text}`).hostname);
+  } catch {
+    return '';
+  }
+}
+
+$('add-on-site').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const host = parseHost($('new-on-site').value);
+  if (!host) return;
+  $('new-on-site').value = '';
+  const patch = {};
+  if (!S.onSites.includes(host)) patch.onSites = [...S.onSites, host];
+  if (S.offSites.includes(host)) patch.offSites = S.offSites.filter((h) => h !== host);
+  if (Object.keys(patch).length) set(patch);
+});
+
 $('add-site').addEventListener('submit', (e) => {
   e.preventDefault();
-  let text = $('new-site').value.trim().toLowerCase();
-  if (!text) return;
-  try {
-    text = new URL(text.includes('://') ? text : `https://${text}`).hostname;
-  } catch {
-    return;
-  }
-  const host = G.siteOf(text);
+  const host = parseHost($('new-site').value);
+  if (!host) return;
   $('new-site').value = '';
-  if (host && !S.offSites.includes(host)) set({ offSites: [...S.offSites, host] });
+  const patch = {};
+  if (!S.offSites.includes(host)) patch.offSites = [...S.offSites, host];
+  if (S.onSites.includes(host)) patch.onSites = S.onSites.filter((h) => h !== host);
+  if (Object.keys(patch).length) set(patch);
 });
 
 $('add-source').addEventListener('submit', (e) => {
